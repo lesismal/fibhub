@@ -47,15 +47,17 @@ type Status struct {
 	WSAddr  string `json:"wsAddr,omitempty"`
 	ArpcWS  string `json:"arpcWs,omitempty"`
 	// BodyEncrypted reports whether arpc bodies are encrypted.
-	BodyEncrypted bool        `json:"bodyEncrypted"`
-	Started       time.Time   `json:"started"`
-	Peers         []PeerView  `json:"peers"`
-	Tunnels       []RouteView `json:"tunnels"`
+	BodyEncrypted bool `json:"bodyEncrypted"`
+	// Web is this page's address and login.
+	Web     common.WebPage `json:"web"`
+	Started time.Time      `json:"started"`
+	Peers   []PeerView     `json:"peers"`
+	Tunnels []RouteView    `json:"tunnels"`
 }
 
 // Status is the server's state.
 func (s *Server) Status() Status {
-	st := Status{Name: s.cfg.Name, Version: proto.Version, Addr: s.Addr(), WSAddr: s.WSAddr(), ArpcWS: s.ArpcWSURL(), BodyEncrypted: s.cfg.BodyPassword != "", Started: s.started, Peers: []PeerView{}, Tunnels: []RouteView{}}
+	st := Status{Name: s.cfg.Name, Version: proto.Version, Addr: s.Addr(), WSAddr: s.WSAddr(), ArpcWS: s.ArpcWSURL(), BodyEncrypted: s.cfg.BodyPassword != "", Web: common.WebPage{Addr: s.webListen, Auth: s.cfg.WebAuth}, Started: s.started, Peers: []PeerView{}, Tunnels: []RouteView{}}
 	counts := map[*Peer]int{}
 	for _, r := range s.Routes() {
 		counts[r.Client]++

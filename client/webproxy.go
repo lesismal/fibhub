@@ -17,9 +17,14 @@ import (
 // of its own to URL, which carries what the two exchange, encrypted with
 // Password.
 type WebProxy struct {
+	// Name names the server, for the web page.
+	Name     string `json:"name,omitempty"`
 	Listen   string `json:"listen"`
 	URL      string `json:"url"`
 	Password string `json:"password"`
+	// WebAuth is the server page's user:password, which the client's web
+	// page shows and opens the page with.
+	WebAuth string `json:"webAuth,omitempty"`
 }
 
 // startWebProxy listens for wp, and returns the address it listens on.

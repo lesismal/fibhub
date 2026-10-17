@@ -10,3 +10,21 @@ function nodeRow(tbody,n={}){const tr=document.createElement('tr');tr.innerHTML=
 function readNodes(tbody){return [...tbody.querySelectorAll('tr')].map(tr=>{const i=tr.querySelectorAll('input');return{name:i[0].value.trim(),addr:i[1].value.trim(),desc:i[2].value.trim()}}).filter(n=>n.name||n.addr)}
 function stateCell(s){return `<span class="state-${esc(s.state)}">${esc(s.state)}</span>${s.error?`<div class="muted">${esc(s.error)}</div>`:''}`}
 const js=v=>esc(JSON.stringify(v));
+// A secret shows as dots until its Show button is pressed; shown keeps which
+// ones are shown across renders.
+const shown=new Set();
+function secret(key,v){const on=shown.has(key);return `<span class="secret">${on?esc(v):'••••••••'}</span><button class="eye" onclick="toggleSecret(${js(key)})">${on?'Hide':'Show'}</button>`}
+function toggleSecret(key){shown.has(key)?shown.delete(key):shown.add(key);render()}
+// pageURL is the http URL of a listen address; one on every address is
+// reached at the host this page came from.
+function pageURL(addr){const m=String(addr).match(/^(.*):(\d+)$/);let h=(m?m[1]:addr).replace(/^\[|\]$/g,'');
+ if(!h||h==='0.0.0.0'||h==='::')h=location.hostname.replace(/^\[|\]$/g,'');return 'http://'+(h.includes(':')?'['+h+']':h)+(m?':'+m[2]:'')}
+// openPage opens the page at addr in a new tab, logged in with auth,
+// "user:password", by posting it to the page's /login.
+function openPage(addr,auth){const url=pageURL(addr);if(!auth){window.open(url+'/','_blank','noopener');return}
+ const i=auth.indexOf(':'),f=document.createElement('form');f.method='POST';f.action=url+'/login';f.target='_blank';f.rel='noopener';
+ for(const[k,v]of[['user',i<0?auth:auth.slice(0,i)],['password',i<0?'':auth.slice(i+1)]]){const e=document.createElement('input');e.type='hidden';e.name=k;e.value=v;f.appendChild(e)}
+ document.body.appendChild(f);f.submit();f.remove()}
+// loginCells are the user, password and Open cells of the page at addr.
+function loginCells(key,addr,auth){const i=(auth||'').indexOf(':'),user=i<0?auth:auth.slice(0,i),pass=i<0?'':auth.slice(i+1);
+ return `<td>${auth?esc(user):'<span class="muted">no login</span>'}</td><td>${auth?secret(key,pass):''}</td><td><button class="primary" onclick="openPage(${js(addr)},${js(auth||'')})">Open</button></td>`}

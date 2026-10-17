@@ -13,7 +13,10 @@
 #   client  10011 webAddr, 10012-10015 webProxies then forwards
 #
 # Each client gets a webProxy per server: a 127.0.0.1 port that serves that
-# server's web page through its wsAddr, encrypted with its wsPassword.
+# server's web page through its wsAddr, encrypted with its wsPassword. The
+# webProxies, and the forwards of nodes that are a pod's own web page, carry
+# that page's webAuth, so the client's web page shows it and opens the page
+# logged in.
 set -eu
 
 # ---- settings ---------------------------------------------------------------
@@ -100,13 +103,28 @@ check_names client "${CLIENTS[@]}"
 ((${#NODES[@]} == ${#NODE_ADDRS[@]})) || die "NODES and NODE_ADDRS differ in length"
 [[ $UPLINK == ws || $UPLINK == tcp ]] || die "UPLINK must be ws or tcp"
 
-# The servers' secrets, which the pods and clients share.
-server_pw=() server_body_pw=() server_ws_pw=()
+# The servers' secrets, which the pods and clients share, and the web pages'
+# logins, which the clients know.
+server_pw=() server_body_pw=() server_ws_pw=() server_web_auth=()
 for i in "${!server_names[@]}"; do
 	server_pw+=("$(rand)")
 	server_body_pw+=("$(rand)")
 	server_ws_pw+=("$(rand)")
+	server_web_auth+=("$WEB_USER:$(rand)")
 done
+pod_web_auth=()
+for pod in "${PODS[@]}"; do
+	pod_web_auth+=("$WEB_USER:$(rand)")
+done
+
+# node_is_web succeeds if the node named $1 is the pod's own web page.
+node_is_web() {
+	local j
+	for j in "${!NODES[@]}"; do
+		[[ ${NODES[$j]} == "$1" && ${NODE_ADDRS[$j]} == *"{web}"* ]] && return 0
+	done
+	return 1
+}
 
 mkdir -p "$out_dir"
 umask 077
@@ -138,7 +156,7 @@ for i in "${!server_names[@]}"; do
   "arpcWsAddr": ":$SERVER_ARPC_WS_PORT",
   "arpcWsPath": "$SERVER_ARPC_WS_PATH",
   "webAddr": "127.0.0.1:$SERVER_WEB_PORT",
-  "webAuth": "$WEB_USER:$(rand)",
+  "webAuth": "${server_web_auth[$i]}",
   "wsAddr": ":$SERVER_WS_PORT",
   "wsPassword": "${server_ws_pw[$i]}",
   "password": "${server_pw[$i]}",
@@ -148,7 +166,8 @@ EOF
 	echo "$f"
 done
 
-for pod in "${PODS[@]}"; do
+for p in "${!PODS[@]}"; do
+	pod=${PODS[$p]}
 	f="$out_dir/pod-$pod.json"
 	{
 		cat <<EOF
@@ -156,7 +175,7 @@ for pod in "${PODS[@]}"; do
   "mode": "pod",
   "name": "$pod",
   "webAddr": ":$POD_WEB_PORT",
-  "webAuth": "$WEB_USER:$(rand)",
+  "webAuth": "${pod_web_auth[$p]}",
 EOF
 		servers_json
 		echo '  "nodes": ['
@@ -189,22 +208,27 @@ EOF
 				echo "gen-configs: $client: no port left for the web proxy of ${server_names[$i]}, skipped" >&2
 				continue
 			fi
-			printf '%s    {\n      "listen": "127.0.0.1:%s",\n      "url": "ws://%s:%s/",\n      "password": "%s"\n    }' \
-				"$sep" "${CLIENT_PORTS[$k]}" "${server_ips[$i]}" "$SERVER_WS_PORT" "${server_ws_pw[$i]}"
+			printf '%s    {\n      "name": "%s",\n      "listen": "127.0.0.1:%s",\n      "url": "ws://%s:%s/",\n      "password": "%s",\n      "webAuth": "%s"\n    }' \
+				"$sep" "${server_names[$i]}" "${CLIENT_PORTS[$k]}" "${server_ips[$i]}" "$SERVER_WS_PORT" "${server_ws_pw[$i]}" "${server_web_auth[$i]}"
 			sep=$',\n'
 			k=$((k + 1))
 		done
 		printf '\n  ],\n'
 		echo '  "forwards": ['
 		sep=""
-		for pod in "${PODS[@]}"; do
+		for p in "${!PODS[@]}"; do
+			pod=${PODS[$p]}
 			for node in "${FORWARD_NODES[@]}"; do
 				if ((k >= ${#CLIENT_PORTS[@]})); then
 					echo "gen-configs: $client: no port left to forward $pod/$node, skipped" >&2
 					continue
 				fi
-				printf '%s    {\n      "listen": "127.0.0.1:%s",\n      "pod": "%s",\n      "node": "%s"\n    }' \
-					"$sep" "${CLIENT_PORTS[$k]}" "$pod" "$node"
+				web=""
+				if node_is_web "$node"; then
+					web=$(printf ',\n      "webAuth": "%s"' "${pod_web_auth[$p]}")
+				fi
+				printf '%s    {\n      "listen": "127.0.0.1:%s",\n      "pod": "%s",\n      "node": "%s"%s\n    }' \
+					"$sep" "${CLIENT_PORTS[$k]}" "$pod" "$node" "$web"
 				sep=$',\n'
 				k=$((k + 1))
 			done

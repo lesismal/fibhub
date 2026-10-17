@@ -20,9 +20,11 @@ var indexHTML []byte
 
 // Status is the pod's state, as the web page shows it.
 type Status struct {
-	Name    string          `json:"name"`
-	Version string          `json:"version"`
-	Saved   bool            `json:"saved"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Saved   bool   `json:"saved"`
+	// Web is this page's address and login.
+	Web     common.WebPage  `json:"web"`
 	Nodes   []proto.Node    `json:"nodes"`
 	Servers []uplink.Status `json:"servers"`
 	Tunnels []TunnelView    `json:"tunnels"`
@@ -31,7 +33,7 @@ type Status struct {
 // Status is the pod's state.
 func (p *Pod) Status() Status {
 	cfg := p.Config()
-	st := Status{Name: cfg.Name, Version: proto.Version, Saved: p.configPath != "", Nodes: cfg.Nodes, Servers: []uplink.Status{}, Tunnels: p.Tunnels()}
+	st := Status{Name: cfg.Name, Version: proto.Version, Saved: p.configPath != "", Web: common.WebPage{Addr: p.webAddr, Auth: cfg.WebAuth}, Nodes: cfg.Nodes, Servers: []uplink.Status{}, Tunnels: p.Tunnels()}
 	for _, u := range p.Uplinks() {
 		st.Servers = append(st.Servers, u.Status())
 	}

@@ -32,13 +32,15 @@ type Status struct {
 	Meta     map[string]string `json:"meta"`
 	Servers  []ServerView      `json:"servers"`
 	Forwards []ForwardView     `json:"forwards"`
-	Tunnels  []TunnelView      `json:"tunnels"`
+	// WebProxies serve servers' web pages locally.
+	WebProxies []WebProxyView `json:"webProxies"`
+	Tunnels    []TunnelView   `json:"tunnels"`
 }
 
 // Status is the client's state.
 func (c *Client) Status() Status {
 	info := c.Info()
-	st := Status{Name: info.Name, Version: proto.Version, Saved: c.configPath != "", Meta: info.Meta, Servers: []ServerView{}, Forwards: c.Forwards(), Tunnels: c.Tunnels()}
+	st := Status{Name: info.Name, Version: proto.Version, Saved: c.configPath != "", Meta: info.Meta, Servers: []ServerView{}, Forwards: c.Forwards(), WebProxies: c.WebProxies(), Tunnels: c.Tunnels()}
 	for _, u := range c.Uplinks() {
 		v := ServerView{Status: u.Status(), Pods: []proto.PodView{}}
 		if list := c.Pods(u); list != nil && v.State == uplink.StateRegistered {

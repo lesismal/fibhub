@@ -142,6 +142,8 @@ type Server struct {
 	arpc     *arpc.Server
 	engine   *fib.Engine
 	webAddr  string
+	// webListen is the address the web page listens on, as bound.
+	webListen string
 	// wsIndex and arpcWSIndex are the bindings of the WebSockets, or -1.
 	wsIndex, arpcWSIndex int
 
@@ -191,6 +193,9 @@ func Run(ctx context.Context, cfg Config, out io.Writer, ready func(*Server)) er
 	}
 	s.engine = engine
 	s.webAddr = dialable(engine, 1)
+	if addrs, err := engine.BindingAddrs(1); err == nil && len(addrs) > 0 {
+		s.webListen = addrs[0].String()
+	}
 	s.wsIndex, s.arpcWSIndex = -1, -1
 	if cfg.WSAddr != "" {
 		if s.wsIndex, err = engine.AddBinding(fib.Binding{Addr: cfg.WSAddr, Handler: s.wsHandler()}); err != nil {

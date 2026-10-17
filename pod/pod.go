@@ -54,6 +54,8 @@ type Pod struct {
 	engine     *fib.Engine
 	configPath string
 	out        io.Writer
+	// webAddr is the address the web page listens on, as bound.
+	webAddr string
 
 	mu      sync.Mutex
 	cfg     Config
@@ -98,6 +100,7 @@ func Run(ctx context.Context, cfg Config, configPath string, out io.Writer, read
 			webAddr = addrs[0].String()
 		}
 	}
+	p.webAddr = webAddr
 	running := make(chan error, 1)
 	go func() { running <- engine.Run() }()
 

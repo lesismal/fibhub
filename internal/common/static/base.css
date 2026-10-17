@@ -17,3 +17,4 @@ dialog{border:1px solid var(--line);border-radius:8px;background:var(--card);col
 dialog table td{padding:4px}
 form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}form.inline input{width:auto;flex:1 1 140px}
 .state-registered{color:var(--ok)}.state-failed{color:var(--bad)}.state-connecting{color:var(--muted)}
+.secret{font-family:ui-monospace,monospace;font-size:12px;margin-right:4px}button.eye{font-size:12px;padding:1px 7px}

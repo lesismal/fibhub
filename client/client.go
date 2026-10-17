@@ -39,6 +39,9 @@ type Forward struct {
 	Server string `json:"server,omitempty"`
 	Pod    string `json:"pod"`
 	Node   string `json:"node"`
+	// WebAuth, for a node that is a web page, such as a pod's, is its
+	// user:password, which the client's web page shows and opens it with.
+	WebAuth string `json:"webAuth,omitempty"`
 }
 
 // Config is a client's settings, as its config file holds them.
@@ -165,6 +168,27 @@ func Run(ctx context.Context, cfg Config, configPath string, out io.Writer, read
 	}
 	_ = engine.Close()
 	return err
+}
+
+// WebProxyView is a web proxy as the web page shows it.
+type WebProxyView struct {
+	Name    string `json:"name,omitempty"`
+	Listen  string `json:"listen"`
+	Addr    string `json:"addr"`
+	URL     string `json:"url"`
+	WebAuth string `json:"webAuth,omitempty"`
+}
+
+// WebProxies is the client's web proxies.
+func (c *Client) WebProxies() []WebProxyView {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]WebProxyView, len(c.proxies))
+	for i, addr := range c.proxies {
+		wp := c.cfg.WebProxies[i]
+		out[i] = WebProxyView{Name: wp.Name, Listen: wp.Listen, Addr: addr, URL: wp.URL, WebAuth: wp.WebAuth}
+	}
+	return out
 }
 
 // WebProxyAddrs is the addresses the web proxies listen on.

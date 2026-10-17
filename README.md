@@ -104,7 +104,9 @@ The same templates are in [`configs/`](configs). fibhub refuses to start while a
 - **pod**: `name`, `webAddr`, `webAuth`, `servers[]` (`name`, `addr`, `password`, `bodyPassword`),
   `nodes[]` (`name`, `addr`, `desc`), `meta`
 - **client**: `name`, `webAddr`, `webAuth`, `servers[]`, `forwards[]` (`listen`, `pod`, `node`, optional
-  `server`), `webProxies[]` (`listen`, `url`, `password`), `meta`
+  `server`, optional `webAuth`), `webProxies[]` (optional `name`, `listen`, `url`, `password`, optional
+  `webAuth`), `meta`. A forward's or web proxy's `webAuth` is the `user:password` of the web page it
+  reaches (a pod's, a server's), which the client's page shows and opens that page with.
 
 Precedence: a flag given on the command line overrides the file; `-server`, `-node` and `-forward` add
 entries unless the file has one of the same name. A pod or client **writes the file back** when its
@@ -229,7 +231,13 @@ password; a wrong password gets nothing.
 - **pod**: its servers and their state, the nodes it can reach (edit and save; every server hears of the
   change), its tunnels.
 - **client**: its servers, their pods and nodes (edit a pod's nodes through the server), its forwards
-  (add/remove while running), its tunnels, and the meta it tells servers.
+  (add/remove while running), its web proxies, its tunnels, and the meta it tells servers. A forward or
+  web proxy with a `webAuth` shows that page's user and password (hidden until **Show**) and an **Open**
+  button that opens the page already logged in.
+
+The server and pod pages also show their own address, user and password, with the same **Open**.
+**Open** posts the user and password to the page's `/login`, which answers with a session cookie (30
+days, signed with the page's `webAuth`), so the page asks for nothing; basic auth works as before.
 
 ## Security
 

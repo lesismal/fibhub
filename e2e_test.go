@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -549,5 +550,79 @@ func TestParseForward(t *testing.T) {
 		if _, err := parseForward(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
+	}
+}
+
+// A web page opens to its user and password, and to the cookie a post of
+// them to /login gets; the client's page lists its web proxies with the
+// server page's login.
+func TestWebLogin(t *testing.T) {
+	const auth = "admin:pa55"
+	srv := start(t, func(ctx context.Context, ready func(*server.Server)) error {
+		return server.Run(ctx, server.Config{Name: "hub", Addr: "127.0.0.1:0", WebAddr: "127.0.0.1:0", WSAddr: "127.0.0.1:0", WebAuth: auth, Password: password}, io.Discard, ready)
+	})
+	base := "http://" + srv.WebAddr()
+	noRedirect := &stdhttp.Client{Timeout: 5 * time.Second, CheckRedirect: func(*stdhttp.Request, []*stdhttp.Request) error { return stdhttp.ErrUseLastResponse }}
+	status := func(cookies ...*stdhttp.Cookie) int {
+		req, _ := stdhttp.NewRequest("GET", base+"/api/status", nil)
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
+		rsp, err := noRedirect.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rsp.Body.Close()
+		return rsp.StatusCode
+	}
+	login := func(user, pass string) []*stdhttp.Cookie {
+		rsp, err := noRedirect.PostForm(base+"/login", url.Values{"user": {user}, "password": {pass}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rsp.Body.Close()
+		if rsp.StatusCode != stdhttp.StatusSeeOther || rsp.Header.Get("Location") != "/" {
+			t.Fatalf("login: %s to %q", rsp.Status, rsp.Header.Get("Location"))
+		}
+		return rsp.Cookies()
+	}
+	if got := status(); got != stdhttp.StatusUnauthorized {
+		t.Fatalf("no login: %d", got)
+	}
+	if rsp, err := noRedirect.Get(base + "/login"); err != nil || rsp.StatusCode != stdhttp.StatusSeeOther {
+		t.Fatalf("GET /login: %v %v", rsp, err)
+	} else {
+		rsp.Body.Close()
+	}
+	if c := login("admin", "wrong"); len(c) != 0 {
+		t.Fatalf("a wrong password got cookies %v", c)
+	}
+	cookies := login("admin", "pa55")
+	if len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatalf("cookies %v", cookies)
+	}
+	if got := status(cookies...); got != stdhttp.StatusOK {
+		t.Fatalf("with the cookie: %d", got)
+	}
+	forged := *cookies[0]
+	forged.Value = strings.Replace(forged.Value, ".", ".0", 1)
+	if got := status(&forged); got != stdhttp.StatusUnauthorized {
+		t.Fatalf("with a forged cookie: %d", got)
+	}
+	if st := srv.Status(); st.Web.Auth != auth || st.Web.Addr == "" {
+		t.Fatalf("server web %+v", st.Web)
+	}
+
+	c := start(t, func(ctx context.Context, ready func(*client.Client)) error {
+		return client.Run(ctx, client.Config{Name: "me", WebProxies: []client.WebProxy{{Name: "hub", Listen: "127.0.0.1:0", URL: "ws://" + srv.WSAddr() + "/", Password: password, WebAuth: auth}}}, "", io.Discard, ready)
+	})
+	wps := c.Status().WebProxies
+	if len(wps) != 1 || wps[0].Name != "hub" || wps[0].WebAuth != auth || wps[0].Addr == "" {
+		t.Fatalf("client web proxies %+v", wps)
+	}
+	// The proxy's page takes a login of its own.
+	base = "http://" + wps[0].Addr
+	if got := status(login("admin", "pa55")...); got != stdhttp.StatusOK {
+		t.Fatalf("through the proxy with the cookie: %d", got)
 	}
 }

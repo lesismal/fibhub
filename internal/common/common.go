@@ -4,15 +4,21 @@
 package common
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	fibhttp "github.com/lesismal/fib/http"
 )
@@ -77,27 +83,95 @@ func Page(html []byte) fibhttp.HandlerFunc {
 	return func(c *fibhttp.Context) { _ = c.Respond(stdhttp.StatusOK, "text/html; charset=utf-8", html) }
 }
 
+// LoginPath is where a page's Open button posts "user" and "password": the
+// right pair gets a session cookie, so the page opens without asking for
+// them.
+const LoginPath = "/login"
+
+// SessionTTL bounds a login's session cookie.
+var SessionTTL = 30 * 24 * time.Hour
+
+// WebPage is a web page's address and the user:password that opens it.
+type WebPage struct {
+	Addr string `json:"addr"`
+	Auth string `json:"auth,omitempty"`
+}
+
 // BasicAuth asks for user:password, given as "user:password", on every
-// request; an empty auth asks for nothing.
+// request, or for the session cookie a post of them to LoginPath got; an
+// empty auth asks for nothing.
 func BasicAuth(auth string) func(fibhttp.Handler) fibhttp.Handler {
 	user, pass, _ := strings.Cut(auth, ":")
+	match := func(u, p string) bool {
+		return subtle.ConstantTimeCompare([]byte(u), []byte(user)) == 1 && subtle.ConstantTimeCompare([]byte(p), []byte(pass)) == 1
+	}
+	key := sha256.Sum256([]byte("fibhub web session\x00" + auth))
 	return func(next fibhttp.Handler) fibhttp.Handler {
-		if auth == "" {
-			return next
-		}
 		return fibhttp.HandlerFunc(func(c *fibhttp.Context) {
-			u, p, ok := c.Request.BasicAuth()
-			if !ok || subtle.ConstantTimeCompare([]byte(u), []byte(user)) != 1 || subtle.ConstantTimeCompare([]byte(p), []byte(pass)) != 1 {
-				_ = c.WriteResponse(fibhttp.Response{
-					StatusCode: stdhttp.StatusUnauthorized,
-					Header:     stdhttp.Header{"Www-Authenticate": {`Basic realm="fibhub"`}},
-					Body:       []byte("unauthorized\n"),
-				})
+			r := c.Request
+			if r.URL.Path == LoginPath {
+				header := stdhttp.Header{"Location": {"/"}}
+				form, _ := url.ParseQuery(string(c.Body()))
+				if auth != "" && r.Method == stdhttp.MethodPost && match(form.Get("user"), form.Get("password")) {
+					header.Set("Set-Cookie", newSession(key[:], r.Host).String())
+				}
+				// A wrong pair, or none, lands on the page, which asks for
+				// the right one.
+				_ = c.WriteResponse(fibhttp.Response{StatusCode: stdhttp.StatusSeeOther, Header: header})
 				return
 			}
-			next.ServeHTTP(c)
+			if auth == "" {
+				next.ServeHTTP(c)
+				return
+			}
+			if u, p, ok := r.BasicAuth(); ok && match(u, p) || validSession(key[:], r) {
+				next.ServeHTTP(c)
+				return
+			}
+			_ = c.WriteResponse(fibhttp.Response{
+				StatusCode: stdhttp.StatusUnauthorized,
+				Header:     stdhttp.Header{"Www-Authenticate": {`Basic realm="fibhub"`}},
+				Body:       []byte("unauthorized\n"),
+			})
 		})
 	}
+}
+
+// A session cookie is named and signed for the host it was set on, since
+// browsers send a host's cookies to every port of it: pages on other ports
+// keep cookies of their own, and one of theirs opens nothing here.
+func sessionMAC(key []byte, parts ...string) []byte {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(strings.Join(parts, "\x00")))
+	return m.Sum(nil)
+}
+
+func sessionName(key []byte, host string) string {
+	return "fibhub_" + hex.EncodeToString(sessionMAC(key, "name", host)[:8])
+}
+
+func newSession(key []byte, host string) *stdhttp.Cookie {
+	exp := strconv.FormatInt(time.Now().Add(SessionTTL).Unix(), 10)
+	return &stdhttp.Cookie{
+		Name: sessionName(key, host), Value: exp + "." + hex.EncodeToString(sessionMAC(key, "session", host, exp)),
+		Path: "/", MaxAge: int(SessionTTL / time.Second), HttpOnly: true, SameSite: stdhttp.SameSiteLaxMode,
+	}
+}
+
+func validSession(key []byte, r *stdhttp.Request) bool {
+	ck, err := r.Cookie(sessionName(key, r.Host))
+	if err != nil {
+		return false
+	}
+	exp, mac, ok := strings.Cut(ck.Value, ".")
+	if !ok {
+		return false
+	}
+	if t, err := strconv.ParseInt(exp, 10, 64); err != nil || time.Now().Unix() > t {
+		return false
+	}
+	want := hex.EncodeToString(sessionMAC(key, "session", r.Host, exp))
+	return subtle.ConstantTimeCompare([]byte(mac), []byte(want)) == 1
 }
 
 // LoadJSON decodes the file at path into v. A path that does not exist

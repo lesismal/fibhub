@@ -12,6 +12,7 @@
 <section><h2>Pods</h2><div id="pods"></div></section>
 <section><h2>Clients</h2><div id="clients"></div></section>
 <section><h2>Tunnels</h2><div id="tunnels"></div></section>
+<section><h2>This web page</h2><div id="web"></div></section>
 </main>
 <dialog id="editor">
 <h3 id="edTitle">Nodes</h3>
@@ -25,6 +26,7 @@
 let state={peers:[],tunnels:[]};
 function render(){
  const st=state;$('name').textContent=st.name;
+ $('web').innerHTML=st.web&&st.web.addr?table(['Address','User','Password',''],[`<tr><td>${esc(pageURL(st.web.addr))}</td>${loginCells('web',st.web.addr,st.web.auth)}</tr>`]):'<div class="empty">None</div>';
  $('meta').textContent=`v${st.version} · arpc ${st.addr}${st.arpcWs?' · arpc-ws '+st.arpcWs:''}${st.wsAddr?' · web-ws '+st.wsAddr:''}${st.bodyEncrypted?' · bodies encrypted':''} · up ${ago(st.started)}`;
  const pods=st.peers.filter(p=>p.info.type==='pod'),clients=st.peers.filter(p=>p.info.type==='client');
  $('pods').innerHTML=table(['ID','Name','Address','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td>

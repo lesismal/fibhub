@@ -102,7 +102,9 @@ fibhub -config=server.json         # 文件里的 "mode" 决定运行模式
 - **pod**：`name`、`webAddr`、`webAuth`、`servers[]`（`name`、`addr`、`password`、`bodyPassword`）、
   `nodes[]`（`name`、`addr`、`desc`）、`meta`
 - **client**：`name`、`webAddr`、`webAuth`、`servers[]`、`forwards[]`（`listen`、`pod`、`node`、可选的
-  `server`）、`webProxies[]`（`listen`、`url`、`password`）、`meta`
+  `server`、可选的 `webAuth`）、`webProxies[]`（可选的 `name`、`listen`、`url`、`password`、可选的
+  `webAuth`）、`meta`。forward 或 web proxy 的 `webAuth` 是它所到达的 web 页面（pod 的、server 的）的
+  `user:password`，client 页面会显示它，并用它打开该页面。
 
 优先级：命令行上给出的 flag 覆盖配置文件；`-server`、`-node`、`-forward` 是追加，文件中已有同名条目则不重复添加。
 pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启动时也会写一次，使命令行参数得以保留），
@@ -220,7 +222,12 @@ fibhub -mode=client -web= -ws-password=... -webproxy=127.0.0.1:7090=ws://hub.exa
   踢掉某个 peer、关闭隧道。
 - **pod**：已连接的 server 及状态、可到达的 node（编辑并保存，所有 server 都会收到更新）、隧道。
 - **client**：已连接的 server、各 server 的 pod 与 node（可经 server 编辑某个 pod 的 node）、forward
-  （运行中增删）、隧道，以及告诉 server 的 meta。
+  （运行中增删）、web proxy、隧道，以及告诉 server 的 meta。带 `webAuth` 的 forward 或 web proxy 会显示
+  该页面的用户名和密码（默认打码，点 **Show** 显示），以及一个 **Open** 按钮，点击即免登录打开该页面。
+
+server 和 pod 页面也会显示本节点 web 页面的地址、用户名和密码，同样带 **Open** 按钮。**Open** 把用户名和
+密码 POST 到该页面的 `/login`，后者返回一个会话 cookie（30 天，用该页面的 `webAuth` 签名），之后无需再
+输入；basic auth 照常可用。
 
 ## 安全说明
 

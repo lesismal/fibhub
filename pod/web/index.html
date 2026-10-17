@@ -17,13 +17,15 @@
 <table><thead><tr><th>Name</th><th>Address (host:port)</th><th>Description</th><th></th></tr></thead><tbody id="nodes"></tbody></table>
 <form class="inline" onsubmit="event.preventDefault()"><button type="button" onclick="nodeRow($('nodes'));nodesDirty=true">Add node</button><button type="button" onclick="loadNodes()">Revert</button><button type="button" class="primary" onclick="saveNodes()">Save and tell servers</button></form></section>
 <section><h2>Tunnels</h2><div id="tunnels"></div></section>
+<section><h2>This web page</h2><div id="web"></div></section>
 </main>
 <div id="msg"></div>
 <script src="/static/base.js"></script>
 <script>
 let state={servers:[],nodes:[],tunnels:[]},nodesDirty=false;
 function render(){
- const st=state;$('name').textContent=st.name;$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
+ const st=state;$('name').textContent=st.name;
+ $('web').innerHTML=st.web&&st.web.addr?table(['Address','User','Password',''],[`<tr><td>${esc(pageURL(st.web.addr))}</td>${loginCells('web',st.web.addr,st.web.auth)}</tr>`]):'<div class="empty">None</div>';$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
  $('servers').innerHTML=table(['Name','Address','State','Server','Peer ID','Tunnels',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
   <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${esc(s.server)}</td><td>${s.peerId||''}</td><td>${s.tunnels}</td>
   <td><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));

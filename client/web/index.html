@@ -17,7 +17,8 @@
 <section><h2>Forwards</h2><div id="forwards"></div>
 <form class="inline" onsubmit="addForward(event)">
 <input id="fListen" placeholder="local address, 127.0.0.1:2222" required><input id="fPod" placeholder="pod" required><input id="fNode" placeholder="node" required>
-<input id="fServer" placeholder="server (optional: any)"><button class="primary">Forward</button></form></section>
+<input id="fServer" placeholder="server (optional: any)"><input id="fWeb" type="password" placeholder="web page user:password (optional)"><button class="primary">Forward</button></form></section>
+<section><h2>Web proxies</h2><div id="proxies"></div></section>
 <section><h2>Tunnels</h2><div id="tunnels"></div></section>
 <section><h2>Client info</h2>
 <form class="inline" onsubmit="saveMeta(event)"><input id="metaText" placeholder="key=value, key2=value2 — told to servers"><button class="primary">Update servers</button></form></section>
@@ -31,7 +32,7 @@
 <div id="msg"></div>
 <script src="/static/base.js"></script>
 <script>
-let state={servers:[],forwards:[],tunnels:[]},metaLoaded=false,editing=null;
+let state={servers:[],forwards:[],webProxies:[],tunnels:[]},metaLoaded=false,editing=null;
 function render(){
  const st=state;$('name').textContent=st.name;$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
  if(!metaLoaded){$('metaText').value=Object.entries(st.meta||{}).map(([k,v])=>k+'='+v).join(', ');metaLoaded=true}
@@ -43,9 +44,12 @@ function render(){
    <button onclick="useNode(${js(s.name)},${js(p.info.name)},${js(n.name)})">Forward…</button></div>`).join('')||'<span class="muted">none</span>'}</td>
   <td><button onclick="edit(${js(s.name)},${js(p.info.name)})">Edit nodes</button></td></tr>`)));
  $('pods').innerHTML=table(['Server','Pod','Nodes',''],rows);
- $('forwards').innerHTML=table(['Listen','Pod','Node','Server','State',''],st.forwards.map(f=>`<tr><td>${esc(f.addr||f.listen)}</td><td>${esc(f.pod)}</td><td>${esc(f.node)}</td>
+ $('forwards').innerHTML=table(['Listen','Pod','Node','Server','State','Web user','Web password','',''],st.forwards.map(f=>`<tr><td>${esc(f.addr||f.listen)}</td><td>${esc(f.pod)}</td><td>${esc(f.node)}</td>
   <td>${esc(f.server||'any')}</td><td>${f.error?`<span class="state-failed">${esc(f.error)}</span>`:'<span class="state-registered">listening</span>'}</td>
+  ${f.webAuth&&!f.error?loginCells('fw:'+f.listen,f.addr||f.listen,f.webAuth):'<td></td><td></td><td></td>'}
   <td><button class="danger" onclick="delForward(${js(f.listen)})">Remove</button></td></tr>`));
+ $('proxies').innerHTML=table(['Server','Listen','Server page over WebSocket','User','Password',''],st.webProxies.map(w=>`<tr><td>${esc(w.name)}</td>
+  <td>${esc(pageURL(w.addr||w.listen))}</td><td>${esc(w.url)}</td>${loginCells('wp:'+w.listen,w.addr||w.listen,w.webAuth)}</tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Listen','Pod','Node','Address','Local client','Sent','Received','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.pod)}</td><td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.remote)}</td><td>${bytes(t.out)}</td><td>${bytes(t.in)}</td><td>${ago(t.created)}</td>
   <td><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
@@ -56,7 +60,7 @@ async function addServer(e){e.preventDefault();if(await call('/api/servers',{nam
 function delServer(name){if(confirm('Disconnect from '+name+'?'))call('/api/servers/delete',{name},'Removed')}
 function refreshPods(server){call('/api/pods/refresh',{server},'Pods queried')}
 function useNode(server,pod,node){$('fServer').value=server;$('fPod').value=pod;$('fNode').value=node;$('fListen').focus()}
-async function addForward(e){e.preventDefault();if(await call('/api/forwards',{listen:$('fListen').value.trim(),pod:$('fPod').value.trim(),node:$('fNode').value.trim(),server:$('fServer').value.trim()},'Forward added'))e.target.reset()}
+async function addForward(e){e.preventDefault();if(await call('/api/forwards',{listen:$('fListen').value.trim(),pod:$('fPod').value.trim(),node:$('fNode').value.trim(),server:$('fServer').value.trim(),webAuth:$('fWeb').value},'Forward added'))e.target.reset()}
 function delForward(listen){call('/api/forwards/delete',{listen},'Forward removed')}
 function closeTunnel(server,id){call('/api/tunnels/close',{server,id},'Tunnel closed')}
 function saveMeta(e){e.preventDefault();const meta={};$('metaText').value.split(',').map(s=>s.trim()).filter(Boolean).forEach(kv=>{const i=kv.indexOf('=');if(i>0)meta[kv.slice(0,i).trim()]=kv.slice(i+1).trim()});call('/api/meta',meta,'Info sent to servers')}
