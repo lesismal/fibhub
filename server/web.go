@@ -25,6 +25,8 @@ type PeerView struct {
 	Since   time.Time  `json:"since"`
 	Info    proto.Info `json:"info"`
 	Tunnels int        `json:"tunnels"`
+	// Conns is how many connections carry the peer's tunnels.
+	Conns int `json:"conns"`
 	proto.PodLatency
 }
 
@@ -72,7 +74,10 @@ func (s *Server) Status() Status {
 		})
 	}
 	for _, p := range s.Peers() {
-		st.Peers = append(st.Peers, PeerView{ID: p.ID, Addr: p.Addr, Since: p.Since, Info: p.Info(), Tunnels: counts[p], PodLatency: p.Latency()})
+		s.mu.Lock()
+		conns := len(p.links)
+		s.mu.Unlock()
+		st.Peers = append(st.Peers, PeerView{ID: p.ID, Addr: p.Addr, Since: p.Since, Info: p.Info(), Tunnels: counts[p], Conns: conns, PodLatency: p.Latency()})
 	}
 	return st
 }

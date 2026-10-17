@@ -93,6 +93,7 @@ client 都连接所有 server（奇数号 server 走 TCP，偶数号走 WebSocke
 | `-ws` | server | 承载 Web 页面的加密 WebSocket 地址 |
 | `-ws-password` | server、client | 该 WebSocket 的密码，默认同 `-password` |
 | `-server` | pod、client | 要连接的 server，`[name=]host:port` 或 `ws://host:port/fibhub`；可重复 |
+| `-pool` | pod、client | 到每个 `-server` 的 arpc 连接数，默认 10；每条隧道固定走其中一条，保证数据顺序 |
 | `-meta` | pod、client | 告诉 server 的 `key=value`；可重复 |
 | `-node` | pod | pod 可连接的 node，`name=host:port[,描述]`；可重复 |
 | `-forward` | client | `listen=pod/node[@server]`，如 `127.0.0.1:2222=lab/ssh`；可重复。不带 `@server` 时，隧道分散到所有拥有该 pod 的 server 上（见[延迟与负载均衡](#延迟与负载均衡)） |
@@ -116,7 +117,8 @@ fibhub -config=server.json         # 文件里的 "mode" 决定运行模式
 
 - **server**：`name`、`addr`、`arpcWsAddr`、`arpcWsPath`、`webAddr`、`webAuth`、`wsAddr`、`wsPassword`、
   `password`、`bodyPassword`
-- **pod**：`name`、`webAddr`、`webAuth`、`servers[]`（`name`、`addr`、`password`、`bodyPassword`）、
+- **pod**：`name`、`webAddr`、`webAuth`、`servers[]`（`name`、`addr`、`password`、`bodyPassword`、
+  可选的 `poolSize`，默认 10）、
   `nodes[]`（`name`、`addr`、`desc`）、`meta`
 - **client**：`name`、`webAddr`、`webAuth`、`servers[]`、`forwards[]`（`listen`、`pod`、`node`、可选的
   `server`、可选的 `webAuth`）、`webProxies[]`（可选的 `name`、`listen`、`url`、`password`、可选的
@@ -386,7 +388,7 @@ fibhub/
 ├── internal/
 │   ├── proto/         各模式共用的 arpc 方法、消息与版本号
 │   ├── tunnel/        隧道的一端，每条隧道独立流控
-│   ├── uplink/        pod 或 client 到某个 server 的连接，自动重连并定时 ping
+│   ├── uplink/        pod 或 client 到某个 server 的连接池，自动重连并定时 ping
 │   ├── latency/       一条连接的往返时间：滑动平均、最小值、丢包率
 │   ├── wsarpc/        基于 WebSocket 的 arpc
 │   ├── bodycrypt/     arpc 消息 body 的 AES-256-GCM 加密

@@ -725,3 +725,107 @@ func TestBalance(t *testing.T) {
 		}
 	}
 }
+
+// TestPool checks that pods and clients connect to a server with a pool of
+// connections, that tunnels spread over the pool's connections, each on one
+// of them, and that a pool connection that closes takes only its own
+// tunnels with it.
+func TestPool(t *testing.T) {
+	h := startHub(t, []proto.Node{{Name: "echo", Addr: echoNode(t, "")}}, []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}, hubOpts{})
+	waitFor(t, "the pools to join", func() bool {
+		if h.pod.Uplinks()[0].Status().Pool != uplink.DefaultPoolSize || h.client.Uplinks()[0].Status().Pool != uplink.DefaultPoolSize {
+			return false
+		}
+		for _, p := range h.server.Status().Peers {
+			if p.Conns != uplink.DefaultPoolSize {
+				return false
+			}
+		}
+		return true
+	})
+	addr := h.forwardAddr(t, "127.0.0.1:0")
+	echo := func(c net.Conn, msg string) error {
+		c.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := io.WriteString(c, msg); err != nil {
+			return err
+		}
+		buf := make([]byte, len(msg))
+		if _, err := io.ReadFull(c, buf); err != nil {
+			return err
+		}
+		if string(buf) != msg {
+			return fmt.Errorf("echoed %q", buf)
+		}
+		return nil
+	}
+	const n = 2 * uplink.DefaultPoolSize
+	conns := make([]net.Conn, n)
+	for i := range conns {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		if err := echo(c, fmt.Sprint("ping ", i)); err != nil {
+			t.Fatal(err)
+		}
+		conns[i] = c
+	}
+	routes := h.server.Routes()
+	clientLinks, podLinks := map[any]int{}, map[any]int{}
+	for _, r := range routes {
+		clientLinks[r.ClientLink]++
+		podLinks[r.PodLink]++
+	}
+	if len(routes) != n || len(clientLinks) != uplink.DefaultPoolSize || len(podLinks) != uplink.DefaultPoolSize {
+		t.Fatalf("%d tunnels over %d client and %d pod connections", len(routes), len(clientLinks), len(podLinks))
+	}
+
+	// Close a connection of the client's pool other than the one it
+	// registered on, at the server.
+	var me *server.Peer
+	for _, p := range h.server.Peers() {
+		if p.Info().Name == "me" {
+			me = p
+		}
+	}
+	var killed *server.Route
+	for _, r := range routes {
+		if r.ClientLink != me.Client {
+			killed = r
+			break
+		}
+	}
+	gone := map[uint64]bool{}
+	for _, r := range routes {
+		if r.ClientLink == killed.ClientLink {
+			gone[r.ID] = true
+		}
+	}
+	byLocal := map[string]uint64{}
+	for _, tv := range h.client.Tunnels() {
+		byLocal[tv.Remote] = tv.ID
+	}
+	killed.ClientLink.Conn().Close()
+	for i, c := range conns {
+		id, ok := byLocal[c.LocalAddr().String()]
+		if !ok {
+			t.Fatalf("no tunnel for %s", c.LocalAddr())
+		}
+		err := echo(c, "again")
+		if gone[id] != (err != nil) {
+			t.Fatalf("tunnel %d (%d), on the closed connection: %v, echo: %v", id, i, gone[id], err)
+		}
+	}
+	waitFor(t, "the pool to join again", func() bool {
+		return h.client.Uplinks()[0].Status().Pool == uplink.DefaultPoolSize
+	})
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := echo(c, "after"); err != nil {
+		t.Fatal(err)
+	}
+}

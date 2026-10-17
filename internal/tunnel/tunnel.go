@@ -300,7 +300,7 @@ func (h *Handler) OnClose(c *fib.Connection, err error) {
 	}
 }
 
-// Table is the ends of the tunnels one arpc connection carries.
+// Table is the ends of the tunnels the arpc connections to one server carry.
 type Table struct {
 	mu sync.Mutex
 	m  map[uint64]*Endpoint
@@ -369,6 +369,33 @@ func (t *Table) CloseAll(reason string) {
 	for _, e := range ends {
 		e.Close(reason)
 	}
+}
+
+// CloseLink closes every tunnel link carries.
+func (t *Table) CloseLink(link Link, reason string) {
+	t.mu.Lock()
+	var ends []*Endpoint
+	for _, e := range t.m {
+		if e.link == link {
+			ends = append(ends, e)
+		}
+	}
+	t.mu.Unlock()
+	for _, e := range ends {
+		e.Close(reason)
+	}
+}
+
+// Load is how many tunnels each link carries; a link that carries none is
+// missing.
+func (t *Table) Load() map[Link]int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := map[Link]int{}
+	for _, e := range t.m {
+		out[e.link]++
+	}
+	return out
 }
 
 // Register has h serve the tunnel frames for t's ends. They are handled

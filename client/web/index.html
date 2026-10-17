@@ -47,7 +47,7 @@ function render(){
  // Each server's row has its web page, through its web proxy; a web proxy
  // that is no server's gets a row of its own.
  const lone=st.webProxies.filter(w=>!st.servers.some(s=>proxyOf(s)===w));
- const cards=st.servers.map(s=>serverCard(s.name,s.addr,stateCell(s),[['Server',s.server],['Latency',rttText(s.rtt)],['Peer ID',s.peerId||''],['Pods',s.pods.length],['Tunnels',s.tunnels],
+ const cards=st.servers.map(s=>serverCard(s.name,s.addr,stateCell(s),[['Server',s.server],['Latency',rttText(s.rtt)],['Peer ID',s.peerId||''],['Connections',`${s.pool}/${s.poolSize}`],['Pods',s.pods.length],['Tunnels',s.tunnels],
    ['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none']],proxyOf(s),`<button onclick="refreshPods(${js(s.name)})">Query pods</button><button class="danger" onclick="delServer(${js(s.name)})">Remove</button>`))
   .concat(lone.map(w=>serverCard(w.name||w.url,'','<span class="muted">web proxy only</span>',[],w,'')));
  $('servers').innerHTML=cards.length?`<div class="cards">${cards.join('')}</div>`:'<div class="empty">None</div>';
@@ -87,7 +87,7 @@ function flowForward(g,col,listen){const f=state.forwards.find(f=>f.listen===lis
   facts:[['Listen',f.addr||listen],['Pod',f.pod],['Node',f.node],['Server',f.server||'any'],['State',f.error||'listening']]})}
 function flowServer(g,col,name){const s=state.servers.find(s=>s.name===name);
  return g.node('s:'+name,col,{kind:'server',label:name,sub:s?[rttText(s.rtt),s.addr].filter(Boolean).join(' · '):'',state:s?flowState(s.state):'wait',
-  facts:s?[['Address',s.addr],['State',s.error||s.state],['Latency',rttText(s.rtt)],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Tunnels',s.tunnels]]:[]})}
+  facts:s?[['Address',s.addr],['State',s.error||s.state],['Latency',rttText(s.rtt)],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Connections',`${s.pool}/${s.poolSize}`],['Tunnels',s.tunnels]]:[]})}
 function podOf(name){for(const s of state.servers)for(const p of s.pods)if(p.info.name===name)return p}
 function flowPod(g,col,name){const p=podOf(name);
  return g.node('p:'+name,col,{kind:'pod',label:name,sub:p?p.info.hostname:'',state:p?'ok':'wait',

@@ -96,6 +96,7 @@ Everything is a flag: `fibhub -mode=server|pod|client [flags]`, `fibhub -help`, 
 | `-ws` | server | address of the encrypted WebSocket carrying the web page |
 | `-ws-password` | server, client | password of that WebSocket; default `-password` |
 | `-server` | pod, client | server to connect to, `[name=]host:port` or `ws://host:port/fibhub`; repeatable |
+| `-pool` | pod, client | arpc connections to each `-server` server, default 10; each tunnel stays on one of them, so its data keeps its order |
 | `-meta` | pod, client | `key=value` told to the servers; repeatable |
 | `-node` | pod | node the pod may reach, `name=host:port[,description]`; repeatable |
 | `-forward` | client | `listen=pod/node[@server]`, e.g. `127.0.0.1:2222=lab/ssh`; repeatable. Without `@server` the tunnels are spread over every server that has the pod (see [Latency and load balancing](#latency-and-load-balancing)) |
@@ -120,7 +121,8 @@ The same templates are in [`configs/`](configs). fibhub refuses to start while a
 
 - **server**: `name`, `addr`, `arpcWsAddr`, `arpcWsPath`, `webAddr`, `webAuth`, `wsAddr`, `wsPassword`,
   `password`, `bodyPassword`
-- **pod**: `name`, `webAddr`, `webAuth`, `servers[]` (`name`, `addr`, `password`, `bodyPassword`),
+- **pod**: `name`, `webAddr`, `webAuth`, `servers[]` (`name`, `addr`, `password`, `bodyPassword`,
+  optional `poolSize`, default 10),
   `nodes[]` (`name`, `addr`, `desc`), `meta`
 - **client**: `name`, `webAddr`, `webAuth`, `servers[]`, `forwards[]` (`listen`, `pod`, `node`, optional
   `server`, optional `webAuth`), `webProxies[]` (optional `name`, `listen`, `url`, `password`, optional
@@ -412,7 +414,7 @@ fibhub/
 ├── internal/
 │   ├── proto/         the arpc methods and messages every mode shares, and the version
 │   ├── tunnel/        one end of a tunnel, with per-tunnel flow control
-│   ├── uplink/        a pod's or client's connection to one server, with reconnects and pings
+│   ├── uplink/        a pod's or client's pool of connections to one server, with reconnects and pings
 │   ├── latency/       round trips of a link: moving average, minimum, loss
 │   ├── wsarpc/        arpc over WebSocket
 │   ├── bodycrypt/     AES-256-GCM for arpc message bodies

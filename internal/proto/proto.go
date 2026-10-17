@@ -42,6 +42,10 @@ const (
 	// RegisterReq answered with RegisterRsp. It must be the first call on a
 	// connection; the server refuses every other one until it succeeds.
 	MethodRegister = "/fibhub/register"
+	// MethodJoin adds another connection to a registered peer, to carry
+	// some of its tunnels: JoinReq answered with "ok". It is the first call
+	// on such a connection, in place of MethodRegister.
+	MethodJoin = "/fibhub/join"
 	// MethodUpdate replaces what a registered peer told about itself: Info
 	// answered with "ok".
 	MethodUpdate = "/fibhub/update"
@@ -152,6 +156,17 @@ type RegisterRsp struct {
 	ID uint32 `json:"id"`
 	// Server is the server's name.
 	Server string `json:"server"`
+	// Session is the secret the peer's other connections join it with.
+	Session string `json:"session"`
+}
+
+// JoinReq adds a connection to the registered peer ID. It is signed as a
+// registration is, and carries the Session the peer's registration was
+// answered with.
+type JoinReq struct {
+	RegisterReq
+	ID      uint32 `json:"id"`
+	Session string `json:"session"`
 }
 
 // PodView is a pod as the server lists it to clients.
@@ -269,6 +284,13 @@ func Sign(req *RegisterReq, password string) {
 	req.Time = time.Now().Unix()
 	req.Nonce = hex.EncodeToString(nonce[:])
 	req.MAC = mac(req, password)
+}
+
+// NewSession is a fresh RegisterRsp.Session.
+func NewSession() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 func mac(req *RegisterReq, password string) string {

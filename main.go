@@ -67,6 +67,7 @@ type options struct {
 	password, bodyPassword  string
 	addr, ws, wsPassword    string
 	arpcWS, arpcWSPath      string
+	pool                    int
 	servers, meta           common.StringList
 	nodes, forwards, wproxy common.StringList
 
@@ -81,6 +82,7 @@ var flagModes = map[string][]string{
 	"arpc-ws":      {"server"},
 	"arpc-ws-path": {"server"},
 	"server":       {"pod", "client"},
+	"pool":         {"pod", "client"},
 	"meta":         {"pod", "client"},
 	"node":         {"pod"},
 	"forward":      {"client"},
@@ -96,7 +98,7 @@ var usageGroups = []struct {
 	{"General", []string{"mode", "config", "print-config", "help", "version"}},
 	{"All modes", []string{"name", "web", "web-auth", "password", "body-password"}},
 	{"Server", []string{"addr", "arpc-ws", "arpc-ws-path", "ws", "ws-password"}},
-	{"Pod and client", []string{"server", "meta"}},
+	{"Pod and client", []string{"server", "pool", "meta"}},
 	{"Pod", []string{"node"}},
 	{"Client", []string{"forward", "webproxy", "ws-password"}},
 }
@@ -124,6 +126,7 @@ func newOptions(out io.Writer) *options {
 	f.StringVar(&o.wsPassword, "ws-password", "", "password encrypting the web page's WebSocket: the server's -ws, the client's -webproxy (default: -password)")
 
 	f.Var(&o.servers, "server", "server to connect to, [name=]host:port or ws://host:port/path (repeatable)")
+	f.IntVar(&o.pool, "pool", uplink.DefaultPoolSize, "connections to each -server server that carry tunnels, each tunnel on one of them throughout")
 	f.Var(&o.meta, "meta", "key=value told to the servers (repeatable)")
 	f.Var(&o.nodes, "node", "node the pod can reach, name=host:port[,description] (repeatable)")
 	f.Var(&o.forwards, "forward", "local address tunneled to a node, listen=pod/node[@server] (repeatable)")
@@ -287,8 +290,14 @@ func (o *options) peer(defaultWeb string, name, web, webAuth *string, servers *[
 		*web = defaultWeb
 	}
 	o.set("web-auth", webAuth, o.webAuth)
+	if o.pool < 1 {
+		return fmt.Errorf("-pool %d is less than 1", o.pool)
+	}
 	for _, s := range o.servers {
 		sc := uplink.Config{Name: s, Addr: s, Password: o.password, BodyPassword: o.bodyPassword}
+		if o.visited["pool"] {
+			sc.PoolSize = o.pool
+		}
 		if n, addr, ok := strings.Cut(s, "="); ok && !wsarpc.IsURL(s) {
 			sc.Name, sc.Addr = n, addr
 		}

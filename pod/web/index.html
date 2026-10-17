@@ -31,7 +31,7 @@ function render(){
  const st=state;$('name').textContent=st.name;
  $('web').innerHTML=st.web&&st.web.addr?pageLine('web',st.web.addr,st.web.auth):'';$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
  $('servers').innerHTML=table(['Name','Address','State','Latency','Server','Peer ID','Tunnels',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
-  <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${rtt(s.rtt)}</td><td>${esc(s.server)}</td><td>${s.peerId||''}</td><td>${s.tunnels}</td>
+  <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${rtt(s.rtt)}</td><td>${esc(s.server)}</td><td>${s.peerId||''}<div class="muted">${s.pool}/${s.poolSize} conns</div></td><td>${s.tunnels}</td>
   <td><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Client','Node','Address','Connect','Local','In','Out','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${t.connectRtt?`<span class="rtt">${ms(t.connectRtt)}</span>`:''}</td><td>${esc(t.local)}</td><td>${bytes(t.in)}</td><td>${bytes(t.out)}</td><td>${ago(t.created)}</td>
@@ -49,7 +49,7 @@ function flowMe(g,col){const st=state;return g.node('me',col,{kind:'pod',label:s
  facts:[['Servers',st.servers.length],['Nodes',st.nodes.length],['Version',st.version]]})}
 function flowServer(g,col,name){const s=state.servers.find(s=>s.name===name);
  return g.node('s:'+name,col,{kind:'server',label:name,sub:s?s.addr:'',state:s?flowState(s.state):'wait',
-  facts:s?[['Address',s.addr],['State',s.error||s.state],['Latency',rttText(s.rtt)],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Tunnels',s.tunnels]]:[]})}
+  facts:s?[['Address',s.addr],['State',s.error||s.state],['Latency',rttText(s.rtt)],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Connections',`${s.pool}/${s.poolSize}`],['Tunnels',s.tunnels]]:[]})}
 function flowNode(g,col,name){const n=state.nodes.find(n=>n.name===name)||{name};
  return g.node('n:'+name,col,{kind:'node',icon:flowNodeIcon(name),label:name,sub:n.addr||'',facts:[['Address',n.addr],['Description',n.desc],['Connect',rttText(nodeRTT(name))]]})}
 function flowAll(){const st=state,g=flowGraph(['Clients','Servers','Pod','Nodes']);flowMe(g,2);
