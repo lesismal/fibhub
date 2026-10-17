@@ -7,10 +7,13 @@
 #
 # Ports (instances of one mode run on different hosts, so each uses the same
 # ports):
-#   server  10000 addr, 10001 arpcWsAddr, 10002 webAddr, 10003 wsAddr
-#           (10004-10005 spare)
+#   server  10000 addr, 10001 arpcWsAddr, 10002 webAddr (127.0.0.1 only),
+#           10003 wsAddr (10004-10005 spare)
 #   pod     10006 webAddr (10007-10010 spare)
-#   client  10011 webAddr, 10012-10015 forwards
+#   client  10011 webAddr, 10012-10015 webProxies then forwards
+#
+# Each client gets a webProxy per server: a 127.0.0.1 port that serves that
+# server's web page through its wsAddr, encrypted with its wsPassword.
 set -eu
 
 # ---- settings ---------------------------------------------------------------
@@ -37,8 +40,9 @@ UPLINK="ws"
 NODES=("ssh" "web")
 NODE_ADDRS=("127.0.0.1:22" "127.0.0.1:{web}")
 
-# Nodes each client forwards for every pod, taking ports from
-# CLIENT_FORWARD_PORTS in order; pairs beyond the last port are skipped.
+# Nodes each client forwards for every pod. A client's webProxies, one per
+# server, and then its forwards take ports from CLIENT_PORTS in order; any
+# beyond the last port are skipped.
 FORWARD_NODES=("ssh" "web")
 
 # Username of every web page's basic auth.
@@ -54,7 +58,7 @@ SERVER_WS_PORT=10003
 SERVER_ARPC_WS_PATH="/fibhub"
 POD_WEB_PORT=10006
 CLIENT_WEB_PORT=10011
-CLIENT_FORWARD_PORTS=(10012 10013 10014 10015)
+CLIENT_PORTS=(10012 10013 10014 10015)
 
 # ---- generation -------------------------------------------------------------
 
@@ -97,10 +101,11 @@ check_names client "${CLIENTS[@]}"
 [[ $UPLINK == ws || $UPLINK == tcp ]] || die "UPLINK must be ws or tcp"
 
 # The servers' secrets, which the pods and clients share.
-server_pw=() server_body_pw=()
+server_pw=() server_body_pw=() server_ws_pw=()
 for i in "${!server_names[@]}"; do
 	server_pw+=("$(rand)")
 	server_body_pw+=("$(rand)")
+	server_ws_pw+=("$(rand)")
 done
 
 mkdir -p "$out_dir"
@@ -132,10 +137,10 @@ for i in "${!server_names[@]}"; do
   "addr": ":$SERVER_ADDR_PORT",
   "arpcWsAddr": ":$SERVER_ARPC_WS_PORT",
   "arpcWsPath": "$SERVER_ARPC_WS_PATH",
-  "webAddr": ":$SERVER_WEB_PORT",
+  "webAddr": "127.0.0.1:$SERVER_WEB_PORT",
   "webAuth": "$WEB_USER:$(rand)",
   "wsAddr": ":$SERVER_WS_PORT",
-  "wsPassword": "$(rand)",
+  "wsPassword": "${server_ws_pw[$i]}",
   "password": "${server_pw[$i]}",
   "bodyPassword": "${server_body_pw[$i]}"
 }
@@ -177,16 +182,29 @@ for client in "${CLIENTS[@]}"; do
   "webAuth": "$WEB_USER:$(rand)",
 EOF
 		servers_json
-		echo '  "forwards": ['
+		echo '  "webProxies": ['
 		sep="" k=0
+		for i in "${!server_names[@]}"; do
+			if ((k >= ${#CLIENT_PORTS[@]})); then
+				echo "gen-configs: $client: no port left for the web proxy of ${server_names[$i]}, skipped" >&2
+				continue
+			fi
+			printf '%s    {\n      "listen": "127.0.0.1:%s",\n      "url": "ws://%s:%s/",\n      "password": "%s"\n    }' \
+				"$sep" "${CLIENT_PORTS[$k]}" "${server_ips[$i]}" "$SERVER_WS_PORT" "${server_ws_pw[$i]}"
+			sep=$',\n'
+			k=$((k + 1))
+		done
+		printf '\n  ],\n'
+		echo '  "forwards": ['
+		sep=""
 		for pod in "${PODS[@]}"; do
 			for node in "${FORWARD_NODES[@]}"; do
-				if ((k >= ${#CLIENT_FORWARD_PORTS[@]})); then
+				if ((k >= ${#CLIENT_PORTS[@]})); then
 					echo "gen-configs: $client: no port left to forward $pod/$node, skipped" >&2
 					continue
 				fi
 				printf '%s    {\n      "listen": "127.0.0.1:%s",\n      "pod": "%s",\n      "node": "%s"\n    }' \
-					"$sep" "${CLIENT_FORWARD_PORTS[$k]}" "$pod" "$node"
+					"$sep" "${CLIENT_PORTS[$k]}" "$pod" "$node"
 				sep=$',\n'
 				k=$((k + 1))
 			done
