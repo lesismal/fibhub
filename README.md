@@ -113,6 +113,68 @@ entries unless the file has one of the same name. A pod or client **writes the f
 settings change on its web page (and once at start, so flags given then are kept), with mode `0600`
 since it holds passwords. A server only reads its file.
 
+### Generating a deployment's configs
+
+[`configs/gen-configs.sh`](configs/gen-configs.sh) writes matching config files for a whole deployment
+at once (every server, pod and client), with random passwords that agree with each other:
+
+1. List the instances in [`configs/config.sh`](configs/config.sh). The file explains each list and
+   has examples:
+
+   ```sh
+   SERVERS=(            # "name ip": ip is where pods and clients reach that server
+     "hub-1 127.0.0.1"  # replace 127.0.0.1 with each server's address
+     "hub-2 127.0.0.1"
+   )
+   PODS=("lab" "office")
+   CLIENTS=("alice-laptop" "bob-macmini")
+   ```
+
+2. Optionally change the other settings at the top of `gen-configs.sh`:
+
+   | Setting | Default | Meaning |
+   |---------|---------|---------|
+   | `UPLINK` | `ws` | pods and clients reach servers over `ws` (`ws://ip:10001/fibhub`) or `tcp` (`ip:10000`) |
+   | `NODES`, `NODE_ADDRS` | `ssh` 127.0.0.1:22, `web` 127.0.0.1:{web} | nodes every pod offers; `{web}` is the pod's own web port |
+   | `FORWARD_NODES` | `ssh web` | nodes every client forwards, for every pod |
+   | `WEB_USER` | `admin` | user of every web page's login |
+   | `PASSWORD_LEN` | `24` | length of the random passwords |
+   | `*_PORT`, `CLIENT_PORTS` | see below | ports |
+
+3. Run it; the files go to `configs/gen/` (ignored by git), or to the directory given:
+
+   ```sh
+   ./configs/gen-configs.sh            # configs/gen/server-hub-1.json, pod-lab.json, client-alice-laptop.json, ...
+   ./configs/gen-configs.sh /tmp/out
+   ```
+
+4. Copy each file to its host and start it, e.g. with [`restart.sh`](restart.sh), which stops the
+   running process of that mode, starts `fibhub` (by default the binary next to the script) with the
+   file, and logs to the file's name with `.log`:
+
+   ```sh
+   ./restart.sh configs/gen/server-hub-1.json
+   ```
+
+What each instance gets:
+
+- **server**: `addr` `:10000`, `arpcWsAddr` `:10001`, `webAddr` `127.0.0.1:10002`, `wsAddr` `:10003`, and
+  its own `password`, `bodyPassword`, `wsPassword` and `webAuth`.
+- **pod**: `webAddr` `:10006`, its `webAuth`, every server, and the nodes from `NODES`.
+- **client**: `webAddr` `127.0.0.1:10011`, its `webAuth`, every server; then, from `CLIENT_PORTS`
+  (`10012`-`10015`), a web proxy per server (with the server page's `webAuth`), then a forward per pod
+  and `FORWARD_NODES` entry (a pod web page's forward has its `webAuth`), so the client's web page can
+  open them logged in.
+
+Things to know:
+
+- Every run makes **new passwords** for every file: deploy the whole set together.
+- Instances of one mode share ports, so each runs on its own host; `restart.sh` also stops every
+  running process of that mode first. Lists with several `127.0.0.1` entries are templates: replace the
+  addresses, or change the ports of those sharing a host by hand.
+- A client needs `servers + pods × FORWARD_NODES` ports; with more than `CLIENT_PORTS` holds, the rest
+  are skipped with a warning. Add ports to `CLIENT_PORTS` for larger deployments.
+
 ## Deployment
 
 ### Ports

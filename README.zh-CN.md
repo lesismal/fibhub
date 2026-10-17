@@ -110,6 +110,64 @@ fibhub -config=server.json         # 文件里的 "mode" 决定运行模式
 pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启动时也会写一次，使命令行参数得以保留），
 文件权限为 `0600`，因为其中包含密码。server 只读取配置文件。
 
+### 生成整套部署的配置
+
+[`configs/gen-configs.sh`](configs/gen-configs.sh) 一次生成整套部署（所有 server、pod、client）的配置
+文件，密码随机生成且彼此匹配：
+
+1. 在 [`configs/config.sh`](configs/config.sh) 中列出各实例。文件里对每个列表都有说明和示例：
+
+   ```sh
+   SERVERS=(            # "name ip"：ip 是 pod 和 client 连接该 server 用的地址
+     "hub-1 127.0.0.1"  # 部署前把 127.0.0.1 换成各 server 的地址
+     "hub-2 127.0.0.1"
+   )
+   PODS=("lab" "office")
+   CLIENTS=("alice-laptop" "bob-macmini")
+   ```
+
+2. 可选：修改 `gen-configs.sh` 顶部的其他设置：
+
+   | 设置 | 默认值 | 含义 |
+   |------|--------|------|
+   | `UPLINK` | `ws` | pod 和 client 连接 server 的方式：`ws`（`ws://ip:10001/fibhub`）或 `tcp`（`ip:10000`） |
+   | `NODES`、`NODE_ADDRS` | `ssh` 127.0.0.1:22、`web` 127.0.0.1:{web} | 每个 pod 提供的 node；`{web}` 为 pod 自己的 web 端口 |
+   | `FORWARD_NODES` | `ssh web` | 每个 client 为每个 pod 转发的 node |
+   | `WEB_USER` | `admin` | 所有 web 页面登录的用户名 |
+   | `PASSWORD_LEN` | `24` | 随机密码长度 |
+   | `*_PORT`、`CLIENT_PORTS` | 见下文 | 端口 |
+
+3. 运行脚本；文件写到 `configs/gen/`（已被 git 忽略），或写到参数给出的目录：
+
+   ```sh
+   ./configs/gen-configs.sh            # configs/gen/server-hub-1.json、pod-lab.json、client-alice-laptop.json……
+   ./configs/gen-configs.sh /tmp/out
+   ```
+
+4. 把每个文件拷到对应主机上启动，例如用 [`restart.sh`](restart.sh)：它会停掉该模式正在运行的进程，用该
+   文件启动 `fibhub`（默认是脚本旁边的二进制），日志写到把 `.json` 换成 `.log` 的文件：
+
+   ```sh
+   ./restart.sh configs/gen/server-hub-1.json
+   ```
+
+各实例得到的配置：
+
+- **server**：`addr` `:10000`、`arpcWsAddr` `:10001`、`webAddr` `127.0.0.1:10002`、`wsAddr` `:10003`，以及
+  它自己的 `password`、`bodyPassword`、`wsPassword` 和 `webAuth`。
+- **pod**：`webAddr` `:10006`、它的 `webAuth`、所有 server，以及 `NODES` 中的 node。
+- **client**：`webAddr` `127.0.0.1:10011`、它的 `webAuth`、所有 server；然后依次从 `CLIENT_PORTS`
+  （`10012`-`10015`）取端口：每个 server 一个 web proxy（带该 server 页面的 `webAuth`），再为每个 pod 的每个
+  `FORWARD_NODES` 各一个 forward（pod web 页面的 forward 带其 `webAuth`），这样 client 页面可以免登录打开它们。
+
+注意事项：
+
+- 每次运行都会为所有文件生成**新密码**：整套文件要一起部署。
+- 同一模式的实例使用相同端口，因此各自运行在不同主机上；`restart.sh` 也会先停掉该模式所有正在运行的进程。
+  含多个 `127.0.0.1` 条目的列表只是模板：部署前替换地址，或手动修改同一主机上实例的端口。
+- 一个 client 需要 `server 数 + pod 数 × FORWARD_NODES 数` 个端口；超出 `CLIENT_PORTS` 的部分会被跳过并
+  给出警告。部署规模更大时请往 `CLIENT_PORTS` 里加端口。
+
 ## 部署
 
 ### 端口

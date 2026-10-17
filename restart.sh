@@ -8,6 +8,15 @@
 # binary (default: the one next to this script) is copied over that name
 # next to it, and the copy is started with nohup, logging to the config's
 # path with .log in place of .json.
+#
+# restart.sh 用一个配置文件（重新）启动 fibhub：
+#
+#   ./restart.sh server.json [fibhub 二进制]
+#
+# 配置中的 "mode" 决定进程名：fibhub-server、fibhub-pod 或 fibhub-client。
+# 先停掉所有同名的运行中进程，再把 fibhub 二进制（默认是本脚本旁边的那个）复制
+# 为该名字放在它旁边，然后用 nohup 启动这个副本，日志写到把配置路径的 .json 换
+# 成 .log 的文件。
 set -eu
 
 die() {
@@ -32,6 +41,7 @@ bin="$(cd "$(dirname "$src")" && pwd)/$name"
 log="${cfg%.json}.log"
 
 # Stop the running ones, giving them 10s before SIGKILL.
+# 停掉正在运行的进程，给它们 10 秒，之后发送 SIGKILL。
 pids=$(pgrep -x "$name" || true)
 if [[ -n $pids ]]; then
 	echo "stopping $name:" $pids
