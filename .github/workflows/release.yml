@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+
+      - name: Build
+        id: build
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' internal/proto/proto.go)
+          if [ -z "$version" ]; then
+            echo "cannot read Version from internal/proto/proto.go"
+            exit 1
+          fi
+          tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # name GOOS GOARCH GOARM
+          targets="
+          linux-386     linux   386   -
+          linux-amd64   linux   amd64 -
+          linux-armv6   linux   arm   6
+          linux-armv7   linux   arm   7
+          linux-arm64   linux   arm64 -
+          windows-386   windows 386   -
+          windows-amd64 windows amd64 -
+          windows-arm64 windows arm64 -
+          darwin-amd64  darwin  amd64 -
+          darwin-arm64  darwin  arm64 -
+          "
+
+          mkdir -p dist
+          echo "$targets" | while read -r name goos goarch goarm; do
+            [ -n "$name" ] || continue
+            echo "::group::$name"
+            pkg="fibhub-${tag}-${name}"
+            dir="build/$pkg"
+            mkdir -p "$dir"
+            exe=fibhub
+            [ "$goos" = windows ] && exe=fibhub.exe
+            arm=""
+            [ "$goarm" != - ] && arm=$goarm
+            CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch GOARM=$arm \
+              go build -trimpath -ldflags="-s -w" -o "$dir/$exe" .
+            cp LICENSE README.md README.zh-CN.md "$dir/"
+            if [ "$goos" = windows ]; then
+              (cd build && zip -qr "../dist/$pkg.zip" "$pkg")
+            else
+              tar -C build -czf "dist/$pkg.tar.gz" "$pkg"
+            fi
+            echo "::endgroup::"
+          done
+
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.build.outputs.tag }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          short=${GITHUB_SHA::7}
+          {
+            echo "fibhub ${VERSION}, build ${GITHUB_RUN_NUMBER}, commit ${short}."
+            echo
+            echo "| Package | Platform |"
+            echo "| --- | --- |"
+            echo "| linux-386 / linux-amd64 | Linux x86 32/64-bit |"
+            echo "| linux-armv6 / linux-armv7 / linux-arm64 | Linux ARM 32-bit (v6, v7) / 64-bit |"
+            echo "| windows-386 / windows-amd64 | Windows x86 32/64-bit |"
+            echo "| windows-arm64 | Windows ARM 64-bit |"
+            echo "| darwin-amd64 / darwin-arm64 | macOS Intel / Apple silicon |"
+            echo
+            echo "Verify downloads with \`sha256sum -c SHA256SUMS\`."
+          } > notes.md
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "fibhub ${VERSION} build ${GITHUB_RUN_NUMBER} (${short})" \
+            --notes-file notes.md \
+            --latest
