@@ -34,11 +34,18 @@ Object.assign(zh,{
  // messages
  'Pod queried':'已查询 Pod','Pods queried':'已查询 Pod','Kicked':'已踢出','Tunnel closed':'隧道已关闭','Nodes saved':'节点已保存',
  'Nodes saved on the pod':'节点已保存到 Pod','Server added':'服务器已添加','Removed':'已移除','Forward added':'转发已添加',
+ // tunnel diagrams
+ 'Details':'详情','← All tunnels':'← 全部隧道','Tunnel map':'隧道全景','Tunnel path':'隧道链路','Tunnel':'隧道','Control link':'控制连接',
+ 'Traffic':'流量热度','low → high':'低 → 高','Tunnel ID':'隧道 ID','Local app':'本地应用','this page':'本页','not visible here':'此处不可见',
+ 'Only the client sees the local app.':'只有客户端能看到本地应用。','This tunnel is closed.':'该隧道已关闭。',
+ 'No open tunnels; dashed lines are control links.':'暂无隧道；虚线为控制连接。','Protocol':'协议','Body encryption':'消息体加密',
+ 'Version':'版本','OS':'系统','Uptime':'运行时长','arpc over WebSocket':'arpc（WebSocket）','arpc over TCP':'arpc（TCP）',
+ 'Web page over WebSocket':'经 WebSocket 的 Web 页面',
  'Forward removed':'转发已移除','Info sent to servers':'信息已发送到服务器','Login saved':'登录已保存','Kick this peer?':'踢出该 peer？'});
 // Texts made of a UI string and names.
 const zhRe=[[/^Nodes of pod (.+) \(via (.+)\)$/,'Pod $1 的节点（经由 $2）'],[/^Nodes of pod (.+)$/,'Pod $1 的节点'],
  [/^Login of the web page of server (.+)$/,'服务器 $1 的 Web 页面登录'],[/^Login of the web page of (.+)$/,'$1 的 Web 页面登录'],
- [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？']];
+ [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？'],[/^Tunnels \((\d+)\)$/,'隧道（$1）'],[/^(\d+) forwards$/,'$1 个转发'],[/^(\d+) nodes$/,'$1 个节点']];
 // Parts of the header's status line.
 const zhMeta=[[' · bodies encrypted',' · 消息体已加密'],[' · up ',' · 已运行 '],[' · settings not saved (no -config)',' · 设置未保存（未指定 -config）']];
 // A table cell's own text, and the name in the header, are data (a name, an
@@ -55,6 +62,8 @@ let pref=saved(),lang=pref==='auto'?system():pref;
 function tr(s,el,ph){const k=s.trim(),d=ph?zhPh:zh;if(!k)return null;
  if(Object.hasOwn(d,k)&&!(el&&(el.tagName==='TD'||el.id==='name')&&!cellOK.has(k)))return s.replace(k,d[k]);
  for(const[re,r]of zhRe)if(re.test(k))return s.replace(k,k.replace(re,r));
+ // A diagram's columns, "Clients → Server → Pods".
+ const parts=k.split(' → ');if(parts.length>1&&parts.every(p=>Object.hasOwn(zh,p)))return s.replace(k,parts.map(p=>zh[p]).join(' → '));
  if(el&&el.id==='meta'){let o=s;for(const[a,b]of zhMeta)o=o.split(a).join(b);if(o!==s)return o}
  return null}
 // Each translated text node and placeholder keeps its English, to be put

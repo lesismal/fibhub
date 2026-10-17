@@ -21,7 +21,7 @@
 <input id="fListen" placeholder="local address, 127.0.0.1:2222" required><input id="fPod" placeholder="pod" required><input id="fNode" placeholder="node" required>
 <input id="fServer" placeholder="server (optional: any)"><input id="fWeb" type="password" placeholder="web page user:password (optional)"><button class="primary">Forward</button></form></section>
 <section><h2>Web proxies</h2><div id="proxies"></div></section>
-<section><h2>Tunnels</h2><div id="tunnels"></div></section>
+<section><h2>Tunnels<button class="h2btn" onclick="openFlow()">Details</button></h2><div id="tunnels"></div></section>
 <section><h2>Client info</h2>
 <form class="inline" onsubmit="saveMeta(event)"><input id="metaText" placeholder="key=value, key2=value2 — told to servers"><button class="primary">Update servers</button></form></section>
 </main>
@@ -38,6 +38,7 @@
 <p style="text-align:right"><button type="button" onclick="loginEd.close()">Cancel</button> <button class="primary">Save</button></p></form></dialog>
 <div id="msg"></div>
 <script src="/static/base.js"></script>
+<script src="/static/flow.js"></script>
 <script>
 let state={servers:[],forwards:[],webProxies:[],tunnels:[]},metaLoaded=false,editing=null;
 function render(){
@@ -61,8 +62,43 @@ function render(){
   <td><button onclick="editLogin(${js(w.listen)},${js(w.webAuth||'')},'web page of server '+${js(proxyServer(w)||w.url)})">Set login</button></td></tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Listen','Pod','Node','Address','Local client','Sent','Received','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.pod)}</td><td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.remote)}</td><td>${bytes(t.out)}</td><td>${bytes(t.in)}</td><td>${ago(t.created)}</td>
-  <td><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+  <td><button onclick="openFlow(${js(t.id)})">Details</button><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+ flowRefresh();
 }
+// The tunnel diagrams: this client, its forwards, servers, pods and their
+// nodes. A client's tunnel end sends the local app's bytes (out) up.
+const tunnelOf=t=>({id:t.id,name:`${t.peer} → ${t.pod}/${t.node}`,up:t.out,down:t.in,created:t.created});
+const transport=a=>/^ws:/i.test(a)?'arpc over WebSocket':'arpc over TCP';
+function flowMe(g,col){const st=state;return g.node('me',col,{kind:'client',label:st.name,sub:`${st.forwards.length} forwards`,self:true,state:'ok',
+ facts:[['Servers',st.servers.length],['Forwards',st.forwards.length],['Version',st.version]]})}
+function flowForward(g,col,listen){const f=state.forwards.find(f=>f.listen===listen)||{listen};
+ return g.node('f:'+listen,col,{kind:'forward',label:f.addr||listen,sub:f.pod?`→ ${f.pod}/${f.node}`:'',state:f.error?'bad':'ok',
+  facts:[['Listen',f.addr||listen],['Pod',f.pod],['Node',f.node],['Server',f.server||'any'],['State',f.error||'listening']]})}
+function flowServer(g,col,name){const s=state.servers.find(s=>s.name===name);
+ return g.node('s:'+name,col,{kind:'server',label:name,sub:s?s.addr:'',state:s?flowState(s.state):'wait',
+  facts:s?[['Address',s.addr],['State',s.error||s.state],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Tunnels',s.tunnels]]:[]})}
+function podOf(name){for(const s of state.servers)for(const p of s.pods)if(p.info.name===name)return p}
+function flowPod(g,col,name){const p=podOf(name);
+ return g.node('p:'+name,col,{kind:'pod',label:name,sub:p?p.info.hostname:'',state:p?'ok':'wait',
+  facts:p?[['Address',p.addr],['Host',p.info.hostname],['OS',p.info.os],['Version',p.info.version],['Since',ago(p.since)]]:[]})}
+function flowNode(g,col,pod,name){const p=podOf(pod),n=p&&(p.info.nodes||[]).find(n=>n.name===name)||{name};
+ return g.node(`n:${pod}/${name}`,col,{kind:'node',icon:flowNodeIcon(name),label:name,sub:n.addr||'',facts:[['Pod',pod],['Address',n.addr],['Description',n.desc]]})}
+function flowAll(){const st=state,g=flowGraph(['Client','Forwards','Servers','Pods','Nodes']);flowMe(g,0);
+ st.forwards.forEach(f=>{flowForward(g,1,f.listen);g.link('me','f:'+f.listen)});
+ st.servers.forEach(s=>{flowServer(g,2,s.name);s.pods.forEach(p=>{flowPod(g,3,p.info.name);g.link('s:'+s.name,'p:'+p.info.name);
+  (p.info.nodes||[]).forEach(n=>{flowNode(g,4,p.info.name,n.name);g.link('p:'+p.info.name,`n:${p.info.name}/${n.name}`)})})});
+ // A forward may take any server that has its pod.
+ st.forwards.forEach(f=>st.servers.forEach(s=>{if((!f.server||f.server===s.name)&&s.pods.some(p=>p.info.name===f.pod))g.link('f:'+f.listen,'s:'+s.name)}));
+ st.tunnels.forEach(t=>{flowForward(g,1,t.peer);flowServer(g,2,t.server);flowPod(g,3,t.pod);flowNode(g,4,t.pod,t.node);
+  g.tunnel(tunnelOf(t),['me','f:'+t.peer,'s:'+t.server,'p:'+t.pod,`n:${t.pod}/${t.node}`])});
+ return g}
+function flowOne(id){const st=state,t=st.tunnels.find(t=>t.id===id);if(!t)return null;
+ const g=flowGraph(['Local app','Client','Server','Pod','Node']),s=st.servers.find(s=>s.name===t.server)||{},enc=s.bodyEncrypted;
+ g.node('app',0,{kind:'app',label:'Local app',sub:t.remote,state:'ok',facts:[['Address',t.remote]]});
+ flowMe(g,1).facts.unshift(['Listen',t.local||t.peer]);g.byId.me.sub=t.local||t.peer;
+ flowServer(g,2,t.server);flowPod(g,3,t.pod);flowNode(g,4,t.pod,t.node);
+ g.tunnel(tunnelOf(t),['app','me','s:'+t.server,'p:'+t.pod,`n:${t.pod}/${t.node}`],[{label:'TCP'},{label:transport(s.addr||''),lock:enc},{label:'arpc',lock:enc},{label:'TCP'}]);
+ return g}
 // hostOf is the host of a server or web proxy address, host:port or a URL.
 const hostOf=a=>{try{return new URL(String(a).includes('://')?a:'tcp://'+a).hostname}catch(e){return ''}};
 // proxyOf is the web proxy that serves server s's web page: the one named

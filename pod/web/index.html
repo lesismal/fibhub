@@ -18,11 +18,12 @@
 <section><h2>Nodes this pod can reach</h2>
 <table><thead><tr><th>Name</th><th>Address (host:port)</th><th>Description</th><th></th></tr></thead><tbody id="nodes"></tbody></table>
 <form class="inline" onsubmit="event.preventDefault()"><button type="button" onclick="nodeRow($('nodes'));nodesDirty=true">Add node</button><button type="button" onclick="loadNodes()">Revert</button><button type="button" class="primary" onclick="saveNodes()">Save and tell servers</button></form></section>
-<section><h2>Tunnels</h2><div id="tunnels"></div></section>
+<section><h2>Tunnels<button class="h2btn" onclick="openFlow()">Details</button></h2><div id="tunnels"></div></section>
 <section><h2>This web page</h2><div id="web"></div></section>
 </main>
 <div id="msg"></div>
 <script src="/static/base.js"></script>
+<script src="/static/flow.js"></script>
 <script>
 let state={servers:[],nodes:[],tunnels:[]},nodesDirty=false;
 function render(){
@@ -33,8 +34,33 @@ function render(){
   <td><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Client','Node','Address','Local','In','Out','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.local)}</td><td>${bytes(t.in)}</td><td>${bytes(t.out)}</td><td>${ago(t.created)}</td>
-  <td><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+  <td><button onclick="openFlow(${js(t.id)})">Details</button><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+ flowRefresh();
 }
+// The tunnel diagrams: clients, servers, this pod and its nodes. A pod's
+// tunnel end sends the node's bytes (out) down and gets the client's (in).
+const tunnelOf=t=>({id:t.id,name:`${t.peer} → ${t.server} → ${t.node}`,up:t.in,down:t.out,created:t.created});
+const transport=a=>/^ws:/i.test(a)?'arpc over WebSocket':'arpc over TCP';
+function flowMe(g,col){const st=state;return g.node('me',col,{kind:'pod',label:st.name,sub:`${st.nodes.length} nodes`,self:true,state:'ok',
+ facts:[['Servers',st.servers.length],['Nodes',st.nodes.length],['Version',st.version]]})}
+function flowServer(g,col,name){const s=state.servers.find(s=>s.name===name);
+ return g.node('s:'+name,col,{kind:'server',label:name,sub:s?s.addr:'',state:s?flowState(s.state):'wait',
+  facts:s?[['Address',s.addr],['State',s.error||s.state],['Protocol',transport(s.addr)],['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none'],['Peer ID',s.peerId||''],['Tunnels',s.tunnels]]:[]})}
+function flowNode(g,col,name){const n=state.nodes.find(n=>n.name===name)||{name};
+ return g.node('n:'+name,col,{kind:'node',icon:flowNodeIcon(name),label:name,sub:n.addr||'',facts:[['Address',n.addr],['Description',n.desc]]})}
+function flowAll(){const st=state,g=flowGraph(['Clients','Servers','Pod','Nodes']);flowMe(g,2);
+ st.servers.forEach(s=>{flowServer(g,1,s.name);g.link('s:'+s.name,'me')});
+ st.nodes.forEach(n=>{flowNode(g,3,n.name);g.link('me','n:'+n.name)});
+ st.tunnels.forEach(t=>{g.node('c:'+t.peer,0,{kind:'client',label:t.peer,state:'ok'});flowServer(g,1,t.server);flowNode(g,3,t.node);
+  g.tunnel(tunnelOf(t),['c:'+t.peer,'s:'+t.server,'me','n:'+t.node])});
+ return g}
+function flowOne(id){const st=state,t=st.tunnels.find(t=>t.id===id);if(!t)return null;
+ const g=flowGraph(['Local app','Client','Server','Pod','Node']),s=st.servers.find(s=>s.name===t.server)||{},enc=s.bodyEncrypted;
+ g.node('app',0,{kind:'app',label:'Local app',sub:'not visible here',unknown:true,note:'Only the client sees the local app.'});
+ g.node('c:'+t.peer,1,{kind:'client',label:t.peer,state:'ok'});flowServer(g,2,t.server);
+ flowMe(g,3).facts.push(['Local',t.local]);flowNode(g,4,t.node);
+ g.tunnel(tunnelOf(t),['app','c:'+t.peer,'s:'+t.server,'me','n:'+t.node],[{label:'TCP'},{label:'arpc',lock:enc},{label:transport(s.addr||''),lock:enc},{label:'TCP'}]);
+ return g}
 function loadNodes(){$('nodes').innerHTML='';state.nodes.forEach(n=>nodeRow($('nodes'),n));nodesDirty=false}
 async function load(first){try{state=await api('/api/status');render();if(first||!nodesDirty)loadNodes()}catch(e){toast(e.message,true)}}
 for(const ev of['input','click'])document.addEventListener(ev,e=>{if(e.target.closest('#nodes'))nodesDirty=true});
