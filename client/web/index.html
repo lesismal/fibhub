@@ -29,6 +29,11 @@
 <p><button onclick="nodeRow($('edRows'))">Add node</button></p>
 <p style="text-align:right"><button onclick="editor.close()">Cancel</button> <button class="primary" onclick="saveNodes()">Save to pod</button></p>
 </dialog>
+<dialog id="loginEd"><form method="dialog" onsubmit="saveLogin(event)">
+<h3 id="lgTitle">Login</h3>
+<p><input id="lgUser" placeholder="user" autocomplete="off"></p><p><input id="lgPass" type="password" placeholder="password" autocomplete="new-password"></p>
+<p class="muted">Empty user and password: the page has no login.</p>
+<p style="text-align:right"><button type="button" onclick="loginEd.close()">Cancel</button> <button class="primary">Save</button></p></form></dialog>
 <div id="msg"></div>
 <script src="/static/base.js"></script>
 <script>
@@ -36,8 +41,9 @@ let state={servers:[],forwards:[],webProxies:[],tunnels:[]},metaLoaded=false,edi
 function render(){
  const st=state;$('name').textContent=st.name;$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
  if(!metaLoaded){$('metaText').value=Object.entries(st.meta||{}).map(([k,v])=>k+'='+v).join(', ');metaLoaded=true}
- $('servers').innerHTML=table(['Name','Address','State','Server','Peer ID','Pods','Tunnels',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
+ $('servers').innerHTML=table(['Name','Address','State','Server','Peer ID','Pods','Tunnels','Web page',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
   <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${esc(s.server)}</td><td>${s.peerId||''}</td><td>${s.pods.length}</td><td>${s.tunnels}</td>
+  <td>${serverPage(s)}</td>
   <td><button onclick="refreshPods(${js(s.name)})">Query pods</button><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));
  const rows=[];st.servers.forEach(s=>s.pods.forEach(p=>rows.push(`<tr><td>${esc(s.name)}</td><td>${esc(p.info.name)}<div class="muted">${esc(p.info.hostname)} ${esc(p.addr)}</div></td>
   <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}
@@ -47,13 +53,28 @@ function render(){
  $('forwards').innerHTML=table(['Listen','Pod','Node','Server','State','Web user','Web password','',''],st.forwards.map(f=>`<tr><td>${esc(f.addr||f.listen)}</td><td>${esc(f.pod)}</td><td>${esc(f.node)}</td>
   <td>${esc(f.server||'any')}</td><td>${f.error?`<span class="state-failed">${esc(f.error)}</span>`:'<span class="state-registered">listening</span>'}</td>
   ${f.webAuth&&!f.error?loginCells('fw:'+f.listen,f.addr||f.listen,f.webAuth):'<td></td><td></td><td></td>'}
-  <td><button class="danger" onclick="delForward(${js(f.listen)})">Remove</button></td></tr>`));
- $('proxies').innerHTML=table(['Server','Listen','Server page over WebSocket','User','Password',''],st.webProxies.map(w=>`<tr><td>${esc(w.name)}</td>
-  <td>${esc(pageURL(w.addr||w.listen))}</td><td>${esc(w.url)}</td>${loginCells('wp:'+w.listen,w.addr||w.listen,w.webAuth)}</tr>`));
+  <td><button onclick="editLogin(${js(f.listen)},${js(f.webAuth||'')},'web page of '+${js(f.pod+'/'+f.node)})">Set login</button><button class="danger" onclick="delForward(${js(f.listen)})">Remove</button></td></tr>`));
+ $('proxies').innerHTML=table(['Server','Listen','Server page over WebSocket','User','Password','',''],st.webProxies.map(w=>`<tr><td>${esc(proxyServer(w))}</td>
+  <td>${esc(pageURL(w.addr||w.listen))}</td><td>${esc(w.url)}</td>${loginCells('wp:'+w.listen,w.addr||w.listen,w.webAuth)}
+  <td><button onclick="editLogin(${js(w.listen)},${js(w.webAuth||'')},'web page of server '+${js(proxyServer(w)||w.url)})">Set login</button></td></tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Listen','Pod','Node','Address','Local client','Sent','Received','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.pod)}</td><td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.remote)}</td><td>${bytes(t.out)}</td><td>${bytes(t.in)}</td><td>${ago(t.created)}</td>
   <td><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
 }
+// hostOf is the host of a server or web proxy address, host:port or a URL.
+const hostOf=a=>{try{return new URL(String(a).includes('://')?a:'tcp://'+a).hostname}catch(e){return ''}};
+// proxyOf is the web proxy that serves server s's web page: the one named
+// after s, or else the one whose URL is on s's host.
+function proxyOf(s){const ws=state.webProxies||[];return ws.find(w=>w.name===s.name)||ws.find(w=>!w.name&&hostOf(w.url)&&hostOf(w.url)===hostOf(s.addr))}
+function proxyServer(w){if(w.name)return w.name;const s=state.servers.find(s=>proxyOf(s)===w);return s?s.name:''}
+function serverPage(s){const w=proxyOf(s);if(!w)return '<span class="muted">no web proxy</span>';const a=w.addr||w.listen,auth=w.webAuth||'',i=auth.indexOf(':');
+ return `<div>${esc(pageURL(a))}</div><div class="muted">${auth?`${esc(i<0?auth:auth.slice(0,i))} ${secret('wp:'+w.listen,i<0?'':auth.slice(i+1))}`:'no login'}</div>
+  <button class="primary" onclick="openPage(${js(a)},${js(auth)})">Open</button><button onclick="editLogin(${js(w.listen)},${js(auth)},'web page of server '+${js(s.name)})">Set login</button>`}
+let loginFor='';
+function editLogin(listen,auth,what){loginFor=listen;const i=auth.indexOf(':');$('lgTitle').textContent='Login of the '+what;
+ $('lgUser').value=i<0?auth:auth.slice(0,i);$('lgPass').value=i<0?'':auth.slice(i+1);loginEd.showModal()}
+async function saveLogin(e){e.preventDefault();const u=$('lgUser').value.trim(),p=$('lgPass').value;
+ if(await call('/api/webauth',{listen:loginFor,webAuth:u||p?u+':'+p:''},'Login saved'))loginEd.close()}
 async function load(){try{state=await api('/api/status');render()}catch(e){toast(e.message,true)}}
 const call=async(path,body,ok)=>{try{await api(path,body);toast(ok);load();return true}catch(e){toast(e.message,true);return false}};
 async function addServer(e){e.preventDefault();if(await call('/api/servers',{name:$('sName').value.trim(),addr:$('sAddr').value.trim(),password:$('sPass').value,bodyPassword:$('sBody').value},'Server added'))e.target.reset()}
@@ -67,7 +88,7 @@ function saveMeta(e){e.preventDefault();const meta={};$('metaText').value.split(
 function edit(server,pod){const s=state.servers.find(s=>s.name===server),p=s&&s.pods.find(p=>p.info.name===pod);if(!p)return;editing={server,pod};
  $('edTitle').textContent=`Nodes of pod ${pod} (via ${server})`;$('edRows').innerHTML='';(p.info.nodes||[]).forEach(n=>nodeRow($('edRows'),n));if(!(p.info.nodes||[]).length)nodeRow($('edRows'));editor.showModal()}
 async function saveNodes(){if(await call('/api/pods/nodes',{...editing,nodes:readNodes($('edRows'))},'Nodes saved on the pod'))editor.close()}
-load();setInterval(()=>{if(!editor.open)load()},3000);
+load();setInterval(()=>{if(!editor.open&&!loginEd.open)load()},3000);
 </script>
 </body>
 </html>

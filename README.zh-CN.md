@@ -222,8 +222,10 @@ fibhub -mode=client -web= -ws-password=... -webproxy=127.0.0.1:7090=ws://hub.exa
   踢掉某个 peer、关闭隧道。
 - **pod**：已连接的 server 及状态、可到达的 node（编辑并保存，所有 server 都会收到更新）、隧道。
 - **client**：已连接的 server、各 server 的 pod 与 node（可经 server 编辑某个 pod 的 node）、forward
-  （运行中增删）、web proxy、隧道，以及告诉 server 的 meta。带 `webAuth` 的 forward 或 web proxy 会显示
-  该页面的用户名和密码（默认打码，点 **Show** 显示），以及一个 **Open** 按钮，点击即免登录打开该页面。
+  （运行中增删）、web proxy、隧道，以及告诉 server 的 meta。每个 server 的那一行会显示它的 web 页面（经由
+  与它同名的 web proxy，否则经由与它同 host 的那个）。web proxy 或 forward 会显示该页面的用户名和密码（默认
+  打码，点 **Show** 显示）、一个 **Open** 按钮（点击即免登录打开该页面），以及 **Set login**（修改保存在配置里
+  的 `webAuth`）。
 
 server 和 pod 页面也会显示本节点 web 页面的地址、用户名和密码，同样带 **Open** 按钮。**Open** 把用户名和
 密码 POST 到该页面的 `/login`，后者返回一个会话 cookie（30 天，用该页面的 `webAuth` 签名），之后无需再

@@ -136,6 +136,15 @@ func (c *Client) webHandler() fib.Handler {
 			reply(ctx, c.RemoveForward(req.Listen))
 		}
 	})
+	r.Post("/api/webauth", func(ctx *fibhttp.Context) {
+		var req struct {
+			Listen  string `json:"listen"`
+			WebAuth string `json:"webAuth"`
+		}
+		if bind(ctx, &req) {
+			reply(ctx, c.SetWebAuth(req.Listen, req.WebAuth))
+		}
+	})
 	r.Post("/api/tunnels/close", func(ctx *fibhttp.Context) {
 		var req struct {
 			Server string `json:"server"`

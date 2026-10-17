@@ -620,6 +620,12 @@ func TestWebLogin(t *testing.T) {
 	if len(wps) != 1 || wps[0].Name != "hub" || wps[0].WebAuth != auth || wps[0].Addr == "" {
 		t.Fatalf("client web proxies %+v", wps)
 	}
+	if err := c.SetWebAuth(wps[0].Listen, "root:x"); err != nil || c.Status().WebProxies[0].WebAuth != "root:x" {
+		t.Fatalf("set web auth: %v, %+v", err, c.Status().WebProxies)
+	}
+	if err := c.SetWebAuth("127.0.0.1:1", "root:x"); err == nil {
+		t.Fatal("set the web auth of nothing")
+	}
 	// The proxy's page takes a login of its own.
 	base = "http://" + wps[0].Addr
 	if got := status(login("admin", "pa55")...); got != stdhttp.StatusOK {

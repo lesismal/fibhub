@@ -231,9 +231,10 @@ password; a wrong password gets nothing.
 - **pod**: its servers and their state, the nodes it can reach (edit and save; every server hears of the
   change), its tunnels.
 - **client**: its servers, their pods and nodes (edit a pod's nodes through the server), its forwards
-  (add/remove while running), its web proxies, its tunnels, and the meta it tells servers. A forward or
-  web proxy with a `webAuth` shows that page's user and password (hidden until **Show**) and an **Open**
-  button that opens the page already logged in.
+  (add/remove while running), its web proxies, its tunnels, and the meta it tells servers. Each server's
+  row shows its web page, through the web proxy named after it (or else on its host). A web proxy or
+  forward shows its page's user and password (hidden until **Show**), an **Open** button that opens the
+  page already logged in, and **Set login** to change the `webAuth` it keeps in the config.
 
 The server and pod pages also show their own address, user and password, with the same **Open**.
 **Open** posts the user and password to the page's `/login`, which answers with a session cookie (30

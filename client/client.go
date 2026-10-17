@@ -191,6 +191,28 @@ func (c *Client) WebProxies() []WebProxyView {
 	return out
 }
 
+// SetWebAuth sets the web page login of the web proxy, or else the forward,
+// that listens on listen, and saves it.
+func (c *Client) SetWebAuth(listen, auth string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.cfg.WebProxies {
+		if c.cfg.WebProxies[i].Listen == listen {
+			c.cfg.WebProxies[i].WebAuth = auth
+			c.saveLocked()
+			return nil
+		}
+	}
+	for _, fw := range c.forwards {
+		if fw.Listen == listen {
+			fw.WebAuth = auth
+			c.saveLocked()
+			return nil
+		}
+	}
+	return fmt.Errorf("client: no web proxy or forward on %s", listen)
+}
+
 // WebProxyAddrs is the addresses the web proxies listen on.
 func (c *Client) WebProxyAddrs() []string {
 	c.mu.Lock()
