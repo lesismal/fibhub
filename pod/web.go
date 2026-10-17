@@ -11,6 +11,7 @@ import (
 	fib "github.com/lesismal/fib"
 	fibhttp "github.com/lesismal/fib/http"
 	"github.com/lesismal/fibhub/internal/common"
+	"github.com/lesismal/fibhub/internal/latency"
 	"github.com/lesismal/fibhub/internal/proto"
 	"github.com/lesismal/fibhub/internal/uplink"
 )
@@ -24,16 +25,18 @@ type Status struct {
 	Version string `json:"version"`
 	Saved   bool   `json:"saved"`
 	// Web is this page's address and login.
-	Web     common.WebPage  `json:"web"`
-	Nodes   []proto.Node    `json:"nodes"`
-	Servers []uplink.Status `json:"servers"`
-	Tunnels []TunnelView    `json:"tunnels"`
+	Web   common.WebPage `json:"web"`
+	Nodes []proto.Node   `json:"nodes"`
+	// NodeRTT is, by node name, how long the connects to the nodes took.
+	NodeRTT map[string]latency.Stats `json:"nodeRtt"`
+	Servers []uplink.Status          `json:"servers"`
+	Tunnels []TunnelView             `json:"tunnels"`
 }
 
 // Status is the pod's state.
 func (p *Pod) Status() Status {
 	cfg := p.Config()
-	st := Status{Name: cfg.Name, Version: proto.Version, Saved: p.configPath != "", Web: common.WebPage{Addr: p.webAddr, Auth: cfg.WebAuth}, Nodes: cfg.Nodes, Servers: []uplink.Status{}, Tunnels: p.Tunnels()}
+	st := Status{Name: cfg.Name, Version: proto.Version, Saved: p.configPath != "", Web: common.WebPage{Addr: p.webAddr, Auth: cfg.WebAuth}, Nodes: cfg.Nodes, NodeRTT: p.NodeRTT(), Servers: []uplink.Status{}, Tunnels: p.Tunnels()}
 	for _, u := range p.Uplinks() {
 		st.Servers = append(st.Servers, u.Status())
 	}

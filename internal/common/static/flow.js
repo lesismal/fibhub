@@ -7,7 +7,9 @@
 // flowRefresh() after every render so an open diagram stays current.
 // Clicking a tunnel on the map (a link only it runs over, or its row in the
 // side list) shows its path in place of the map; closing the path (✕, Esc
-// or outside the dialog) shows the map again, as it was.
+// or outside the dialog) shows the map again, as it was. A link given an
+// rtt (latency.Stats) shows its latency, colored good, fair or poor, on the
+// diagram unless it is quiet, and on the side and in its tooltip anyway.
 
 const FLOW_ICONS={
  app:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18M7 12.5l2.5 2-2.5 2M12 16.5h4.5"/>',
@@ -98,10 +100,10 @@ function flowSVG(g){const theme=document.documentElement.dataset.theme,rx=theme=
   // A tunnel's path has a lane each way, up above and down below, each colored by its own bytes.
   else if(g.chain)paths=[[-6,l.up,''],[6,l.down,' rev']].map(([o,n,rev])=>`<g class="h${heat({up:n,down:0})}"><path class="lk-base" d="${curve(o)}" stroke-width="${w}"/><path class="lk-flow${rev}" d="${curve(o)}" stroke-width="${w}" style="animation-delay:${phase}"/></g>`).join('');
   else paths=`<path class="lk-base" d="${curve(0)}" stroke-width="${w}"/><path class="lk-flow" d="${curve(0)}" stroke-width="${w}" style="animation-delay:${phase}"/>`;
-  const mx=(x1+x2)/2,my=(a.y+b.y)/2,label=l.label?`<g class="lk-label" transform="translate(${mx} ${my-(g.chain?36:14)})"><text text-anchor="middle">${esc(l.label)}</text>${l.lock?`<svg class="ico" x="${l.label.length*3.3+3}" y="-10" width="11" height="11" viewBox="0 0 24 24">${FLOW_ICONS.lock}</svg>`:''}</g>`+
+  const mx=(x1+x2)/2,my=(a.y+b.y)/2,lat=l.rtt&&l.rtt.samples&&!l.quiet?`<text class="lk-rtt rtt-${rttGrade(l.rtt)}" x="${mx}" y="${my+(g.chain?44:14)}" text-anchor="middle">${esc(rttText(l.rtt))}</text>`:'',label=l.label?`<g class="lk-label" transform="translate(${mx} ${my-(g.chain?36:14)})"><text text-anchor="middle">${esc(l.label)}</text>${l.lock?`<svg class="ico" x="${l.label.length*3.3+3}" y="-10" width="11" height="11" viewBox="0 0 24 24">${FLOW_ICONS.lock}</svg>`:''}</g>`+
    (g.chain&&!l.dashed?`<text class="lk-bytes" x="${mx}" y="${my-14}" text-anchor="middle">↑ ${bytes(l.up)}</text><text class="lk-bytes" x="${mx}" y="${my+24}" text-anchor="middle">↓ ${bytes(l.down)}</text>`:''):'';
-  return `<g class="lk h${h}${l.dashed?' dash':''}" data-k="${esc(l.key)}"><title>${esc(a.label)} → ${esc(b.label)}${l.dashed?'':` · ${l.tunnels.size} · ↑ ${bytes(l.up)} ↓ ${bytes(l.down)}`}</title>
-   <path class="lk-hit" d="${curve(0)}"/>${paths}${label}</g>`}).join('');
+  return `<g class="lk h${h}${l.dashed?' dash':''}" data-k="${esc(l.key)}"><title>${esc(a.label)} → ${esc(b.label)}${l.rtt&&l.rtt.samples?' · '+esc(rttText(l.rtt)):''}${l.dashed?'':` · ${l.tunnels.size} · ↑ ${bytes(l.up)} ↓ ${bytes(l.down)}`}</title>
+   <path class="lk-hit" d="${curve(0)}"/>${paths}${label}${lat}</g>`}).join('');
  const nodes=g.nodes.map(x=>{const s=x.self?T+8:T,badge=x.state?`<g class="bdg ${x.state}" transform="translate(${x.x+s/2-3} ${x.y+s/2-3})"><circle r="7"/>${
    x.state==='ok'?'<path d="M-3 0l2 2 4-4"/>':x.state==='bad'?'<path d="M0-3.5v4M0 2.8v.4"/>':'<path d="M-3 0h6"/>'}</g>`:'';
   return `<g class="nd k-${x.kind}${x.self?' self':''}${x.unknown?' unknown':''}" data-id="${esc(x.id)}"><title>${esc(x.label)}${x.sub?'\n'+esc(x.sub):''}</title>
@@ -143,7 +145,7 @@ function flowSide(d,g){const svg=d.querySelector('.flow-svg');
   ${x.note?`<p class="muted">${esc(x.note)}</p>`:''}<h4>Details</h4>${facts(x.facts)}${list}`;
  else{const a=g.byId[l.from],b=g.byId[l.to];
   html=`<div class="fs-head"><div><b>${esc(a.label)} → ${esc(b.label)}</b><div class="muted">${esc(l.dashed?'Control link':'Tunnel')}</div></div></div>
-  <h4>Details</h4>${facts([['Protocol',l.label||''],['Tunnels',l.dashed?'':l.tunnels.size],['Up',l.dashed?'':bytes(l.up)],['Down',l.dashed?'':bytes(l.down)]])}${list}`}
+  <h4>Details</h4>${facts([['Protocol',l.label||''],['Latency',rttText(l.rtt)],['Tunnels',l.dashed?'':l.tunnels.size],['Up',l.dashed?'':bytes(l.up)],['Down',l.dashed?'':bytes(l.down)]])}${list}`}
  const side=d.querySelector('.flow-side');side.innerHTML=html;
  side.querySelectorAll('.ft').forEach((e,i)=>{const t=ts[i];
   e.onmouseenter=()=>flowFocus(svg,g,new Set([t.id]),new Set());e.onmouseleave=()=>svg.classList.remove('focus');e.onclick=()=>openFlow(t.id)})}

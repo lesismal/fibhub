@@ -98,7 +98,7 @@ Everything is a flag: `fibhub -mode=server|pod|client [flags]`, `fibhub -help`, 
 | `-server` | pod, client | server to connect to, `[name=]host:port` or `ws://host:port/fibhub`; repeatable |
 | `-meta` | pod, client | `key=value` told to the servers; repeatable |
 | `-node` | pod | node the pod may reach, `name=host:port[,description]`; repeatable |
-| `-forward` | client | `listen=pod/node[@server]`, e.g. `127.0.0.1:2222=lab/ssh`; repeatable |
+| `-forward` | client | `listen=pod/node[@server]`, e.g. `127.0.0.1:2222=lab/ssh`; repeatable. Without `@server` the tunnels are spread over every server that has the pod (see [Latency and load balancing](#latency-and-load-balancing)) |
 | `-webproxy` | client | `listen=ws://host:port/`: serve a server's web page locally through its `-ws` |
 
 A flag that belongs to another mode is an error, as is any word that is not a flag.
@@ -313,6 +313,28 @@ fibhub -mode=client -web= -ws-password=... -webproxy=127.0.0.1:7090=ws://hub.exa
 and open <http://127.0.0.1:7090>. Each connection is AES-256-GCM encrypted with keys derived from that
 password; a wrong password gets nothing.
 
+## Latency and load balancing
+
+Every pod and client pings each of its servers every 5 seconds over its arpc connection and tells the
+server what it measured. A pod also times its connects to its nodes, one per tunnel. So every link that
+is up has a latency: the moving average of its round trips, the last and shortest ones, and the share of
+pings lost. The pages show them (see below): green under 50 ms, amber under 150 ms or with 5% loss,
+red above.
+
+A server answers a client's ping with the latency of every pod's links: server to pod, and pod to each
+node. When several servers have the pod a forward names, and the forward names no server, each new
+tunnel picks one of them by its path, client → server → pod:
+
+- **cost** = (client↔server + server↔pod round trip + 10 ms) × (1 + 5 × loss), where loss is that of
+  the two links together. The 10 ms keep paths within a host or a LAN about equal; a path that loses one
+  ping in ten costs 1.5 times as much. A link not measured yet counts as the slowest of its kind that is.
+- **share** of a path = 1/cost², over all the paths: a path twice as slow gets a quarter as many tunnels.
+- the tunnel goes through the server whose open tunnels, the new one included, are fewest for its share
+  (weighted least connections), so tunnels spread over the servers at once, in proportion to their shares.
+
+The client's page shows each server's share of each pod. A forward with `server` set always goes through
+that server.
+
 ## Web pages
 
 Each page is a workbench: a menu on the left, with an item per view and its count (servers, pods,
@@ -320,12 +342,14 @@ forwards, tunnels, ...), and on the right the view picked, under a header with i
 and the theme and language pickers. The URL keeps the view (`#/tunnels`), so a reload or a link opens it;
 the menu folds to icons with the button at its bottom, and on a phone it becomes a row above the view.
 
-- **server**: pods (with nodes), clients, tunnels with bytes up/down. Query a pod, edit its nodes (saved
+- **server**: pods (with nodes), clients, tunnels with bytes up/down, and their latencies: to each pod
+  and client, each pod's connects to its nodes, and each tunnel's whole path. Query a pod, edit its nodes (saved
   on the pod), kick a peer, close a tunnel.
-- **pod**: its servers and their state, the nodes it can reach (edit and save; every server hears of the
-  change), its tunnels.
-- **client**: its servers, their pods and nodes (edit a pod's nodes through the server), its forwards
-  (add/remove while running), its tunnels, and the meta it tells servers. Each server is a card that
+- **pod**: its servers with their state and latency, the nodes it can reach with how long connects to
+  them take (edit and save; every server hears of the change), its tunnels with their connect times.
+- **client**: its servers, their pods and nodes (edit a pod's nodes through the server), with the latency
+  to each server, each pod's path through it and its share of the pod's tunnels, its forwards
+  (add/remove while running), its tunnels with their paths' latency, and the meta it tells servers. Each server is a card that
   also holds its management page: the web proxy that serves it (the one named after the server, or else
   the one on its host), with its local address, the server it goes through, the user and password
   (hidden until **Show**), **Open**, which opens the page already logged in, and **Set login**, which
@@ -338,11 +362,11 @@ days, signed with the page's `webAuth`), so the page asks for nothing; basic aut
 
 **Tunnel diagrams**: **Details** on the Tunnels section opens a map of every open tunnel across the
 page's columns (a client's forwards, servers, pods and nodes; a server's clients, pods and nodes; a pod's
-clients, servers and nodes), drawn over the control links (dashed) and colored by traffic, low to high.
+clients, servers and nodes), drawn over the control links (dashed) and colored by traffic, low to high, with each link's latency.
 Hovering a node or link lights up the tunnels through it; clicking one lists them on the side, where
 hovering a tunnel lights up just its path. Clicking a tunnel (a link only it runs over, or its row in the
 list) shows its whole path in place of the map: local app → client → server → pod → node, with each
-hop's protocol, whether bodies are encrypted, and the bytes each way; closing it (✕, Esc or outside)
+hop's protocol, whether bodies are encrypted, its latency and the bytes each way; closing it (✕, Esc or outside)
 brings the map back as it was. **Details** on a tunnel in the table shows the same path. Both update live.
 
 **Theme and language**, at the top right of every page. Theme: System (the default: light or dark as
@@ -388,7 +412,8 @@ fibhub/
 ├── internal/
 │   ├── proto/         the arpc methods and messages every mode shares, and the version
 │   ├── tunnel/        one end of a tunnel, with per-tunnel flow control
-│   ├── uplink/        a pod's or client's connection to one server, with reconnects
+│   ├── uplink/        a pod's or client's connection to one server, with reconnects and pings
+│   ├── latency/       round trips of a link: moving average, minimum, loss
 │   ├── wsarpc/        arpc over WebSocket
 │   ├── bodycrypt/     AES-256-GCM for arpc message bodies
 │   ├── wscrypt/       the encrypted WebSocket that carries the server's web page

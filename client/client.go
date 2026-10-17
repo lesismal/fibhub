@@ -4,7 +4,9 @@
 // fibhub servers and learns the pods they have and the nodes those pods
 // reach. For each node it is told to forward, it listens on a local TCP
 // address; every connection it accepts there becomes a tunnel, which the
-// server routes to the node's pod and the pod connects to the node. A web
+// server routes to the node's pod and the pod connects to the node. When
+// several servers have the pod, the tunnels are spread over them, more of
+// them on the servers whose path to the pod is faster. A web
 // page shows the servers, pods, forwards and tunnels and configures them; a
 // client given a config file saves those settings there.
 package client
@@ -15,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -22,6 +25,7 @@ import (
 	fib "github.com/lesismal/fib"
 	"github.com/lesismal/fib/arpc"
 	"github.com/lesismal/fibhub/internal/common"
+	"github.com/lesismal/fibhub/internal/latency"
 	"github.com/lesismal/fibhub/internal/proto"
 	"github.com/lesismal/fibhub/internal/tunnel"
 	"github.com/lesismal/fibhub/internal/uplink"
@@ -34,8 +38,8 @@ var OpenTimeout = 20 * time.Second
 type Forward struct {
 	// Listen is the local address, host:port.
 	Listen string `json:"listen"`
-	// Server names the server to go through; empty picks the first one that
-	// has the pod.
+	// Server names the server to go through; empty spreads the tunnels
+	// over every server that has the pod, by how fast and loaded each is.
 	Server string `json:"server,omitempty"`
 	Pod    string `json:"pod"`
 	Node   string `json:"node"`
@@ -250,6 +254,8 @@ func (c *Client) startUplink(sc uplink.Config) *uplink.Uplink {
 			}
 		}, false)
 	})
+	// Each ping's answer has how fast the pods' links are.
+	u.OnPong = func(u *uplink.Uplink, rsp *proto.PingRsp) { c.setPodLatency(u, rsp.Pods) }
 	u.OnRegistered = func(u *uplink.Uplink) {
 		if _, err := c.RefreshPods(u); err != nil {
 			slog.Warn("fibhub: listing pods", "server", u.Config.Addr, "err", err)
@@ -266,6 +272,24 @@ func (c *Client) setPods(u *uplink.Uplink, list *proto.PodList) {
 	c.mu.Lock()
 	c.pods[u] = list
 	c.mu.Unlock()
+}
+
+// setPodLatency records how fast the links of the pods of u's server are.
+func (c *Client) setPodLatency(u *uplink.Uplink, pods map[string]proto.PodLatency) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old := c.pods[u]
+	if old == nil {
+		return
+	}
+	// The web page may be reading the old list.
+	list := &proto.PodList{Server: old.Server, Pods: append([]proto.PodView(nil), old.Pods...)}
+	for i := range list.Pods {
+		if l, ok := pods[list.Pods[i].Info.Name]; ok {
+			list.Pods[i].PodLatency = l
+		}
+	}
+	c.pods[u] = list
 }
 
 // RefreshPods asks the server of u for its pods.
@@ -382,7 +406,8 @@ func (c *Client) RemoveServer(name string) error {
 }
 
 // pick is the uplink a tunnel of f goes through: the server f names, or else
-// the first registered one that lists f's pod with f's node.
+// one of the registered ones that list f's pod with f's node, as choose
+// picks it.
 func (c *Client) pick(f Forward) (*uplink.Uplink, error) {
 	if f.Server != "" {
 		u := c.uplink(f.Server)
@@ -391,6 +416,8 @@ func (c *Client) pick(f Forward) (*uplink.Uplink, error) {
 		}
 		return u, nil
 	}
+	var us []*uplink.Uplink
+	var paths []Path
 	for _, u := range c.Uplinks() {
 		if _, err := u.Client(); err != nil {
 			continue
@@ -402,12 +429,94 @@ func (c *Client) pick(f Forward) (*uplink.Uplink, error) {
 		for _, p := range list.Pods {
 			if p.Info.Name == f.Pod {
 				if _, ok := p.Info.FindNode(f.Node); ok {
-					return u, nil
+					us = append(us, u)
+					paths = append(paths, Path{Server: u.RTT(), Pod: p.RTT, Tunnels: u.Tunnels.Len()})
 				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("no server has pod %q with node %q", f.Pod, f.Node)
+	if len(us) == 0 {
+		return nil, fmt.Errorf("no server has pod %q with node %q", f.Pod, f.Node)
+	}
+	return us[Choose(paths)], nil
+}
+
+// Path is a way to a pod: through a server, which carries Tunnels of the
+// client's tunnels already.
+type Path struct {
+	// Server is the round trip between the client and the server, Pod the
+	// one between the server and the pod.
+	Server, Pod latency.Stats
+	Tunnels     int
+}
+
+// latencyFloor is added to every path's round trip, so that paths of a few
+// milliseconds, within a host or a LAN, count as about as fast.
+const latencyFloor = 10.0
+
+// lossCost is how much a path's cost grows by for each part of its pings
+// lost: a path that loses one ping in ten costs 1.5 times as much.
+const lossCost = 5.0
+
+// Cost is how slow each path is: its round trip, client to server to pod,
+// plus latencyFloor, grown by its loss. A link not measured yet counts as
+// the slowest one of its kind that was, or as 0 when none was.
+func Cost(paths []Path) []float64 {
+	var worstServer, worstPod float64
+	for _, p := range paths {
+		if p.Server.Known() {
+			worstServer = max(worstServer, p.Server.Avg)
+		}
+		if p.Pod.Known() {
+			worstPod = max(worstPod, p.Pod.Avg)
+		}
+	}
+	out := make([]float64, len(paths))
+	for i, p := range paths {
+		rtt := worstServer + worstPod
+		if p.Server.Known() {
+			rtt += p.Server.Avg - worstServer
+		}
+		if p.Pod.Known() {
+			rtt += p.Pod.Avg - worstPod
+		}
+		loss := 1 - (1-p.Server.Loss)*(1-p.Pod.Loss)
+		out[i] = (rtt + latencyFloor) * (1 + lossCost*loss)
+	}
+	return out
+}
+
+// Weights is the share of the tunnels each path should carry: in inverse
+// proportion to the square of its cost, so that a path twice as slow gets a
+// quarter as many tunnels. They add up to 1.
+func Weights(paths []Path) []float64 {
+	cost := Cost(paths)
+	out := make([]float64, len(paths))
+	var sum float64
+	for i, c := range cost {
+		out[i] = 1 / (c * c)
+		sum += out[i]
+	}
+	for i := range out {
+		out[i] /= sum
+	}
+	return out
+}
+
+// Choose is the index of the path a new tunnel takes: the one that carries
+// the fewest tunnels for its weight once it has the new one too, which
+// brings the tunnels the paths carry toward their Weights. A tie goes to
+// the faster path, then to the first.
+func Choose(paths []Path) int {
+	w, cost := Weights(paths), Cost(paths)
+	best, bestLoad := 0, math.Inf(1)
+	for i, p := range paths {
+		load := float64(p.Tunnels+1) / w[i]
+		if load < bestLoad*(1-1e-9) || load <= bestLoad*(1+1e-9) && cost[i] < cost[best] {
+			best, bestLoad = i, load
+		}
+	}
+	return best
 }
 
 // listen opens f's listener.

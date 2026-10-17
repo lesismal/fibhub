@@ -33,35 +33,41 @@ function render(){
  $('web').innerHTML=st.web&&st.web.addr?pageLine('web',st.web.addr,st.web.auth):'';
  $('meta').textContent=`v${st.version} · arpc ${st.addr}${st.arpcWs?' · arpc-ws '+st.arpcWs:''}${st.wsAddr?' · web-ws '+st.wsAddr:''}${st.bodyEncrypted?' · bodies encrypted':''} · up ${ago(st.started)}`;
  const pods=st.peers.filter(p=>p.info.type==='pod'),clients=st.peers.filter(p=>p.info.type==='client');
- $('pods').innerHTML=table(['ID','Name','Address','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td>
+ $('pods').innerHTML=table(['ID','Name','Address','Latency','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td><td>${rtt(p.rtt)}</td>
   <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
-  <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}</div>`).join('')||'<span class="muted">none</span>'}</td>
+  <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}${nodeRTT(p,n.name)?' · '+rtt(nodeRTT(p,n.name)):''}</div>`).join('')||'<span class="muted">none</span>'}</td>
   <td>${p.tunnels}</td><td>${ago(p.since)}</td>
   <td><button onclick="refresh(${p.id})">Query</button><button onclick="edit(${p.id})">Edit nodes</button><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));
- $('clients').innerHTML=table(['ID','Name','Address','Host','Info','Tunnels','Since',''],clients.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td>
+ $('clients').innerHTML=table(['ID','Name','Address','Latency','Host','Info','Tunnels','Since',''],clients.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td><td>${rtt(p.rtt)}</td>
   <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
   <td>${Object.entries(p.info.meta||{}).map(([k,v])=>`<div class="node">${esc(k)}=${esc(v)}</div>`).join('')}</td>
   <td>${p.tunnels}</td><td>${ago(p.since)}</td><td><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));
- $('tunnels').innerHTML=table(['ID','Client','Pod','Node','Address','Up','Down','Age',''],st.tunnels.map(t=>`<tr><td>${t.id}</td><td>${esc(t.client)}</td><td>${esc(t.pod)}</td>
-  <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${bytes(t.up)}</td><td>${bytes(t.down)}</td><td>${ago(t.created)}</td>
+ $('tunnels').innerHTML=table(['ID','Client','Pod','Node','Address','Latency','Up','Down','Age',''],st.tunnels.map(t=>`<tr><td>${t.id}</td><td>${esc(t.client)}</td><td>${esc(t.pod)}</td>
+  <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${pathCell(t)}</td><td>${bytes(t.up)}</td><td>${bytes(t.down)}</td><td>${ago(t.created)}</td>
   <td><button onclick="openFlow(${js(t.id)})">Details</button><button class="danger" onclick="closeTunnel('${t.id}')">Close</button></td></tr>`));
  wbBadge('pods',pods.length);wbBadge('clients',clients.length);wbBadge('tunnels',st.tunnels.length);
  flowRefresh();
 }
 // The tunnel diagrams: clients, this server, pods and their nodes.
 const peerOf=(type,name)=>state.peers.find(p=>p.info.type===type&&p.info.name===name);
-const peerFacts=p=>p?[['Address',p.addr],['Host',p.info.hostname],['OS',p.info.os],['Version',p.info.version],['Peer ID',p.id],['Since',ago(p.since)]]:[];
+const nodeRTT=(p,name)=>p&&p.nodeRtt&&p.nodeRtt[name];
+const rttOf=(type,name)=>{const p=peerOf(type,name);return p&&p.rtt};
+// pathCell is a tunnel's latency: client to server to pod, and the pod's
+// connects to the node, the parts in the tooltip.
+function pathCell(t){const c=rttOf('client',t.client),p=rttOf('pod',t.pod),n=nodeRTT(peerOf('pod',t.pod),t.node),sum=rttSum(c,p);
+ return sum?rtt(n&&n.samples?rttSum(c,p,n):sum,`${t.client} ↔ server ${rttText(c)} · server ↔ ${t.pod} ${rttText(p)}${n&&n.samples?` · ${t.pod} → ${t.node} ${rttText(n)}`:''}`):rtt(null)}
+const peerFacts=p=>p?[['Address',p.addr],['Latency',rttText(p.rtt)],['Host',p.info.hostname],['OS',p.info.os],['Version',p.info.version],['Peer ID',p.id],['Since',ago(p.since)]]:[];
 const tunnelOf=t=>({id:t.id,name:`${t.client} → ${t.pod}/${t.node}`,up:t.up,down:t.down,created:t.created});
 function flowMe(g,col){const st=state;return g.node('me',col,{kind:'server',label:st.name,sub:st.addr,self:true,state:'ok',
  facts:[['Address',st.addr],['arpc over WebSocket',st.arpcWs||''],['Web page over WebSocket',st.wsAddr||''],['Body encryption',st.bodyEncrypted?'AES-256-GCM':'none'],['Version',st.version],['Uptime',ago(st.started)]]})}
 function flowPeer(g,type,col,name){const p=peerOf(type,name);
  return g.node((type==='pod'?'p:':'c:')+name,col,{kind:type,label:name,sub:p?p.info.hostname||p.addr:'',state:p?'ok':'wait',facts:peerFacts(p)})}
 function flowNode(g,col,pod,name){const p=peerOf('pod',pod),n=p&&(p.info.nodes||[]).find(n=>n.name===name)||{name};
- return g.node(`n:${pod}/${name}`,col,{kind:'node',icon:flowNodeIcon(name),label:name,sub:n.addr||'',facts:[['Pod',pod],['Address',n.addr],['Description',n.desc]]})}
+ return g.node(`n:${pod}/${name}`,col,{kind:'node',icon:flowNodeIcon(name),label:name,sub:n.addr||'',facts:[['Pod',pod],['Address',n.addr],['Description',n.desc],['Connect',rttText(nodeRTT(p,name))]]})}
 function flowAll(){const st=state,g=flowGraph(['Clients','Server','Pods','Nodes']);flowMe(g,1);
- st.peers.forEach(p=>{if(p.info.type==='client'){flowPeer(g,'client',0,p.info.name);g.link('c:'+p.info.name,'me')}});
- st.peers.forEach(p=>{if(p.info.type!=='pod')return;flowPeer(g,'pod',2,p.info.name);g.link('me','p:'+p.info.name);
-  (p.info.nodes||[]).forEach(n=>{flowNode(g,3,p.info.name,n.name);g.link('p:'+p.info.name,`n:${p.info.name}/${n.name}`)})});
+ st.peers.forEach(p=>{if(p.info.type==='client'){flowPeer(g,'client',0,p.info.name);g.link('c:'+p.info.name,'me',{rtt:p.rtt})}});
+ st.peers.forEach(p=>{if(p.info.type!=='pod')return;flowPeer(g,'pod',2,p.info.name);g.link('me','p:'+p.info.name,{rtt:p.rtt});
+  (p.info.nodes||[]).forEach(n=>{flowNode(g,3,p.info.name,n.name);g.link('p:'+p.info.name,`n:${p.info.name}/${n.name}`,{rtt:nodeRTT(p,n.name)})})});
  st.tunnels.forEach(t=>{flowPeer(g,'client',0,t.client);flowPeer(g,'pod',2,t.pod);flowNode(g,3,t.pod,t.node);
   g.tunnel(tunnelOf(t),['c:'+t.client,'me','p:'+t.pod,`n:${t.pod}/${t.node}`])});
  return g}
@@ -69,7 +75,7 @@ function flowOne(id){const st=state,t=st.tunnels.find(t=>t.id===id);if(!t)return
  const g=flowGraph(['Local app','Client','Server','Pod','Node']),enc=st.bodyEncrypted;
  g.node('app',0,{kind:'app',label:'Local app',sub:'not visible here',unknown:true,note:'Only the client sees the local app.'});
  flowPeer(g,'client',1,t.client);flowMe(g,2);flowPeer(g,'pod',3,t.pod);flowNode(g,4,t.pod,t.node);
- g.tunnel(tunnelOf(t),['app','c:'+t.client,'me','p:'+t.pod,`n:${t.pod}/${t.node}`],[{label:'TCP'},{label:'arpc',lock:enc},{label:'arpc',lock:enc},{label:'TCP'}]);
+ g.tunnel(tunnelOf(t),['app','c:'+t.client,'me','p:'+t.pod,`n:${t.pod}/${t.node}`],[{label:'TCP'},{label:'arpc',lock:enc,rtt:rttOf('client',t.client)},{label:'arpc',lock:enc,rtt:rttOf('pod',t.pod)},{label:'TCP',rtt:nodeRTT(peerOf('pod',t.pod),t.node)}]);
  return g}
 async function load(){try{state=await api('/api/status');render()}catch(e){toast(e.message,true)}}
 async function refresh(id){try{await api(`/api/peers/${id}/refresh`,{});toast('Pod queried');load()}catch(e){toast(e.message,true)}}

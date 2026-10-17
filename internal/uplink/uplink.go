@@ -1,7 +1,7 @@
 // Package uplink is a pod's or client's connection to a fibhub server: an
 // arpc client that keeps dialing until it connects, registers itself each
-// time it connects, and closes the tunnels it carried when it loses the
-// server.
+// time it connects, pings the server to measure the link, and closes the
+// tunnels it carried when it loses the server.
 package uplink
 
 import (
@@ -14,6 +14,7 @@ import (
 	fib "github.com/lesismal/fib"
 	"github.com/lesismal/fib/arpc"
 	"github.com/lesismal/fibhub/internal/bodycrypt"
+	"github.com/lesismal/fibhub/internal/latency"
 	"github.com/lesismal/fibhub/internal/proto"
 	"github.com/lesismal/fibhub/internal/tunnel"
 	"github.com/lesismal/fibhub/internal/wsarpc"
@@ -24,6 +25,11 @@ var (
 	DialTimeout   = 5 * time.Second
 	CallTimeout   = 10 * time.Second
 	RetryInterval = 3 * time.Second
+	// PingInterval is how often a registered uplink pings the server, and
+	// PingTimeout how long it waits for the answer before it counts the
+	// ping lost.
+	PingInterval = 5 * time.Second
+	PingTimeout  = 5 * time.Second
 )
 
 // Config is a server to connect to.
@@ -57,6 +63,8 @@ type Status struct {
 	PeerID  uint32    `json:"peerId,omitempty"`
 	Since   time.Time `json:"since,omitempty"`
 	Tunnels int       `json:"tunnels"`
+	// RTT is the round trip to the server, as the pings measure it.
+	RTT latency.Stats `json:"rtt"`
 	// BodyEncrypted reports whether arpc bodies are encrypted.
 	BodyEncrypted bool `json:"bodyEncrypted"`
 }
@@ -67,11 +75,17 @@ type Uplink struct {
 	Tunnels *tunnel.Table
 	// OnRegistered, if set, runs each time the uplink registers.
 	OnRegistered func(*Uplink)
+	// OnPing, if set, adds to each ping what else the peer measured.
+	OnPing func(*proto.PingReq)
+	// OnPong, if set, gets the server's answer to each ping.
+	OnPong func(*Uplink, *proto.PingRsp)
 
 	engine  *fib.Engine
 	info    func() proto.Info
 	handler *arpc.Handler
 	seq     atomic.Uint32
+	rtt     latency.Meter
+	pinging atomic.Bool
 
 	mu      sync.Mutex
 	client  *arpc.Client
@@ -140,6 +154,7 @@ func (u *Uplink) Start() {
 		}
 		dialer = d
 	}
+	go u.pingLoop()
 	go func() {
 		for {
 			c, err := arpc.NewClient(dialer, u.handler)
@@ -171,6 +186,7 @@ func (u *Uplink) Start() {
 func (u *Uplink) register(c *arpc.Client) {
 	// Nothing of a connection before this one goes on.
 	u.Tunnels.CloseAll("reconnected")
+	u.rtt.Reset()
 	req := proto.RegisterReq{Info: u.info()}
 	proto.Sign(&req, u.Config.Password)
 	var rsp proto.RegisterRsp
@@ -197,7 +213,60 @@ func (u *Uplink) register(c *arpc.Client) {
 	if f != nil {
 		f(u)
 	}
+	// Measure the link at once, rather than an interval from now.
+	go u.ping()
 }
+
+// pingLoop pings the server every PingInterval until the uplink stops.
+func (u *Uplink) pingLoop() {
+	t := time.NewTicker(PingInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-u.stop:
+			return
+		case <-t.C:
+			u.ping()
+		}
+	}
+}
+
+// ping measures a round trip to the server, telling it what the uplink
+// and OnPing measured before.
+func (u *Uplink) ping() {
+	if !u.pinging.CompareAndSwap(false, true) {
+		return
+	}
+	defer u.pinging.Store(false)
+	c, err := u.Client()
+	if err != nil {
+		return
+	}
+	req := proto.PingReq{RTT: u.rtt.Stats()}
+	if u.OnPing != nil {
+		u.OnPing(&req)
+	}
+	var rsp proto.PingRsp
+	start := time.Now()
+	err = c.Call(proto.MethodPing, &req, &rsp, PingTimeout)
+	d := time.Since(start)
+	if now, _ := u.Client(); now != c {
+		// The connection the ping went over is gone, which says nothing of
+		// the link.
+		return
+	}
+	if err != nil {
+		u.rtt.Lost()
+		return
+	}
+	u.rtt.Add(d)
+	if u.OnPong != nil {
+		u.OnPong(u, &rsp)
+	}
+}
+
+// RTT is the round trip to the server.
+func (u *Uplink) RTT() latency.Stats { return u.rtt.Stats() }
 
 // lost records the loss of the server's connection.
 func (u *Uplink) lost() {
@@ -207,6 +276,7 @@ func (u *Uplink) lost() {
 	}
 	u.peerID = 0
 	u.mu.Unlock()
+	u.rtt.Reset()
 	u.Tunnels.CloseAll("server connection lost")
 }
 
@@ -273,5 +343,5 @@ func (u *Uplink) Stop() {
 func (u *Uplink) Status() Status {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return Status{Name: u.Config.Name, Addr: u.Config.Addr, State: u.state, Error: u.lastErr, Server: u.server, PeerID: u.peerID, Since: u.since, Tunnels: u.Tunnels.Len(), BodyEncrypted: u.Config.BodyPassword != ""}
+	return Status{Name: u.Config.Name, Addr: u.Config.Addr, State: u.state, Error: u.lastErr, Server: u.server, PeerID: u.peerID, Since: u.since, Tunnels: u.Tunnels.Len(), RTT: u.rtt.Stats(), BodyEncrypted: u.Config.BodyPassword != ""}
 }

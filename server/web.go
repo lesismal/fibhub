@@ -25,6 +25,7 @@ type PeerView struct {
 	Since   time.Time  `json:"since"`
 	Info    proto.Info `json:"info"`
 	Tunnels int        `json:"tunnels"`
+	proto.PodLatency
 }
 
 // RouteView is a tunnel as the web page shows it.
@@ -71,7 +72,7 @@ func (s *Server) Status() Status {
 		})
 	}
 	for _, p := range s.Peers() {
-		st.Peers = append(st.Peers, PeerView{ID: p.ID, Addr: p.Addr, Since: p.Since, Info: p.Info(), Tunnels: counts[p]})
+		st.Peers = append(st.Peers, PeerView{ID: p.ID, Addr: p.Addr, Since: p.Since, Info: p.Info(), Tunnels: counts[p], PodLatency: p.Latency()})
 	}
 	return st
 }

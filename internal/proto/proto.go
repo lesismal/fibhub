@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/lesismal/fibhub/internal/latency"
 )
 
 // Version is the fibhub version every peer reports.
@@ -50,6 +52,11 @@ const (
 	// MethodSetPodNodes has the server set a pod's nodes: SetNodesReq
 	// answered with the pod's new Info.
 	MethodSetPodNodes = "/fibhub/pod/nodes"
+	// MethodPing measures a peer's link to the server: a peer calls it
+	// every few seconds with a PingReq, which tells the server what the
+	// peer measured, and the server answers with a PingRsp. The time the
+	// call takes is the link's round trip.
+	MethodPing = "/fibhub/ping"
 	// MethodKick tells a peer the server is closing its connection, with the
 	// reason as the body.
 	MethodKick = "/fibhub/kick"
@@ -152,6 +159,31 @@ type PodView struct {
 	Info  Info      `json:"info"`
 	Addr  string    `json:"addr"`
 	Since time.Time `json:"since"`
+	PodLatency
+}
+
+// PodLatency is how fast a pod's links are: to the server, and to each of
+// its nodes.
+type PodLatency struct {
+	// RTT is the round trip between the server and the pod.
+	RTT latency.Stats `json:"rtt"`
+	// NodeRTT is, by node name, how long the pod's connects to the node
+	// took.
+	NodeRTT map[string]latency.Stats `json:"nodeRtt,omitempty"`
+}
+
+// PingReq is what a peer measured: its round trips to the server and, for
+// a pod, its connects to its nodes.
+type PingReq struct {
+	RTT     latency.Stats            `json:"rtt"`
+	NodeRTT map[string]latency.Stats `json:"nodeRtt,omitempty"`
+}
+
+// PingRsp answers a ping. A client is told how fast each pod's links are,
+// by pod name, which it weighs, with its own round trip to the server, to
+// pick the server a tunnel goes through.
+type PingRsp struct {
+	Pods map[string]PodLatency `json:"pods,omitempty"`
 }
 
 // PodList is the pods of a server.

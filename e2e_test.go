@@ -632,3 +632,96 @@ func TestWebLogin(t *testing.T) {
 		t.Fatalf("through the proxy with the cookie: %d", got)
 	}
 }
+
+// TestBalance has a pod and a client on two servers: every link reports its
+// latency, and a forward that names no server spreads its tunnels over
+// both.
+func TestBalance(t *testing.T) {
+	interval := uplink.PingInterval
+	uplink.PingInterval = 50 * time.Millisecond
+	t.Cleanup(func() { uplink.PingInterval = interval })
+
+	var servers []uplink.Config
+	var hubs []*server.Server
+	for _, name := range []string{"hub-1", "hub-2"} {
+		s := start(t, func(ctx context.Context, ready func(*server.Server)) error {
+			return server.Run(ctx, server.Config{Name: name, Addr: "127.0.0.1:0", WebAddr: "127.0.0.1:0", Password: password}, io.Discard, ready)
+		})
+		hubs = append(hubs, s)
+		servers = append(servers, uplink.Config{Name: name, Addr: s.Addr(), Password: password})
+	}
+	nodes := []proto.Node{{Name: "echo", Addr: echoNode(t, "")}}
+	p := start(t, func(ctx context.Context, ready func(*pod.Pod)) error {
+		return pod.Run(ctx, pod.Config{Name: "lab", Servers: servers, Nodes: nodes}, "", io.Discard, ready)
+	})
+	c := start(t, func(ctx context.Context, ready func(*client.Client)) error {
+		return client.Run(ctx, client.Config{Name: "me", Servers: servers, Forwards: []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}}, "", io.Discard, ready)
+	})
+	waitFor(t, "the client to measure both paths to the pod", func() bool {
+		n := 0
+		for _, s := range c.Status().Servers {
+			for _, pv := range s.Pods {
+				if s.RTT.Known() && pv.RTT.Known() {
+					n++
+				}
+			}
+		}
+		return n == 2
+	})
+	for _, s := range hubs {
+		waitFor(t, "the server to hear its peers' latency", func() bool {
+			st := s.Status()
+			for _, pv := range st.Peers {
+				if !pv.RTT.Known() {
+					return false
+				}
+			}
+			return len(st.Peers) == 2
+		})
+	}
+
+	addr := c.Forwards()[0].Addr
+	var conns []net.Conn
+	for range 6 {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := io.WriteString(conn, "ping"); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 4)
+		if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping" {
+			t.Fatalf("%q, %v", buf, err)
+		}
+		conns = append(conns, conn)
+	}
+	per := map[string]int{}
+	for _, tv := range c.Tunnels() {
+		per[tv.Server]++
+	}
+	if per["hub-1"] == 0 || per["hub-2"] == 0 || per["hub-1"]+per["hub-2"] != len(conns) {
+		t.Fatalf("tunnels per server: %v", per)
+	}
+
+	if !p.NodeRTT()["echo"].Known() {
+		t.Fatal("the pod did not measure its connects to the node")
+	}
+	waitFor(t, "the client to hear of the pod's connects to the node", func() bool {
+		for _, s := range c.Status().Servers {
+			for _, pv := range s.Pods {
+				if !pv.NodeRTT["echo"].Known() {
+					return false
+				}
+			}
+		}
+		return true
+	})
+	for _, tv := range p.Tunnels() {
+		if tv.ConnectRTT <= 0 {
+			t.Fatalf("tunnel %d has no connect time", tv.ID)
+		}
+	}
+}

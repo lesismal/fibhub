@@ -95,7 +95,7 @@ client 都连接所有 server（奇数号 server 走 TCP，偶数号走 WebSocke
 | `-server` | pod、client | 要连接的 server，`[name=]host:port` 或 `ws://host:port/fibhub`；可重复 |
 | `-meta` | pod、client | 告诉 server 的 `key=value`；可重复 |
 | `-node` | pod | pod 可连接的 node，`name=host:port[,描述]`；可重复 |
-| `-forward` | client | `listen=pod/node[@server]`，如 `127.0.0.1:2222=lab/ssh`；可重复 |
+| `-forward` | client | `listen=pod/node[@server]`，如 `127.0.0.1:2222=lab/ssh`；可重复。不带 `@server` 时，隧道分散到所有拥有该 pod 的 server 上（见[延迟与负载均衡](#延迟与负载均衡)） |
 | `-webproxy` | client | `listen=ws://host:port/`：通过 server 的 `-ws` 在本地提供其 Web 页面 |
 
 使用不属于当前模式的参数会报错；不是 flag 的位置参数也会报错。
@@ -297,17 +297,39 @@ fibhub -mode=client -web= -ws-password=... -webproxy=127.0.0.1:7090=ws://hub.exa
 
 然后打开 <http://127.0.0.1:7090>。每个连接都用该密码派生的密钥做 AES-256-GCM 加密；密码不对则什么也拿不到。
 
+## 延迟与负载均衡
+
+每个 pod 和 client 每 5 秒经 arpc 连接 ping 一次各个 server，并把测得的结果告诉 server；pod 还会记录每条
+隧道连接 node 所用的时间。因此每条已建立的连接都有延迟数据：往返时间的滑动平均、最近一次和最短一次，以及
+ping 的丢失比例。各页面都会显示（见下文）：50 ms 以下为绿色，150 ms 以下或丢包 5% 为琥珀色，更高为红色。
+
+server 在回复 client 的 ping 时，附上每个 pod 各段连接的延迟：server 到 pod，以及 pod 到各个 node。当
+forward 指定的 pod 在多个 server 上都有、且 forward 没有指定 server 时，每条新隧道按路径（client → server
+→ pod）选择其中一个 server：
+
+- **代价** =（client↔server + server↔pod 往返时间 + 10 ms）×（1 + 5 × 丢包率），丢包率为两段连接合计。
+  10 ms 让同一主机或局域网内的路径差别不大；每 10 个 ping 丢 1 个的路径代价为 1.5 倍。尚未测得的连接按同类中
+  最慢的已测连接计。
+- 路径的**分担比例** = 1/代价²，在所有路径中归一化：慢一倍的路径只分到四分之一的隧道。
+- 新隧道走"已有隧道数（含这条新隧道）相对分担比例最少"的 server（加权最少连接），因此隧道立即按比例分散到
+  各个 server 上。
+
+client 页面会显示每个 server 对每个 pod 的分担比例。指定了 `server` 的 forward 始终走该 server。
+
 ## Web 页面
 
 每个页面都是工作台布局：左侧是菜单栏，每个视图一项并显示数量（服务器、Pod、转发、隧道……）；右侧是工作区，
 显示所选视图，上方的标题栏包含视图标题、它的操作按钮以及主题和语言选择。URL 会记住当前视图（如 `#/tunnels`），
 刷新或打开链接时直接进入该视图；菜单底部的按钮可将菜单折叠为只显示图标，在手机上菜单变为视图上方的一行。
 
-- **server**：pod（及其 node）、client、隧道及上下行字节数。可以查询 pod、编辑其 node（保存到 pod 上）、
+- **server**：pod（及其 node）、client、隧道及上下行字节数，以及各自的延迟：到每个 pod 和 client 的延迟、
+  每个 pod 连接其 node 的时间、每条隧道整条路径的延迟。可以查询 pod、编辑其 node（保存到 pod 上）、
   踢掉某个 peer、关闭隧道。
-- **pod**：已连接的 server 及状态、可到达的 node（编辑并保存，所有 server 都会收到更新）、隧道。
-- **client**：已连接的 server、各 server 的 pod 与 node（可经 server 编辑某个 pod 的 node）、forward
-  （运行中增删）、隧道，以及告诉 server 的 meta。每个 server 是一张卡片，卡片里还有它的管理页面：提供该页面的
+- **pod**：已连接的 server 及其状态和延迟、可到达的 node 及连接它们所用的时间（编辑并保存，所有 server
+  都会收到更新）、隧道及其建连时间。
+- **client**：已连接的 server、各 server 的 pod 与 node（可经 server 编辑某个 pod 的 node），以及到每个
+  server 的延迟、经由它到每个 pod 的路径延迟和它分担该 pod 隧道的比例；forward（运行中增删）、隧道及其路径
+  延迟，以及告诉 server 的 meta。每个 server 是一张卡片，卡片里还有它的管理页面：提供该页面的
   web proxy（与 server 同名的那个，否则是与它同 host 的那个），包括本地地址、经由的 server 地址、用户名和密码
   （默认打码，点 **Show** 显示）、**Open**（点击即免登录打开该页面）和 **Set login**（修改保存在配置里的
   `webAuth`）。不属于任何 server 的 web proxy 单独一张卡片。指向 web 页面的 forward 也有同样的登录信息、
@@ -319,9 +341,9 @@ server 和 pod 页面在页脚显示本节点 web 页面的地址、用户名和
 
 **隧道图**：隧道区域的**详情**按钮会打开所有已建立隧道的全景图，按页面分列（client 页面：forward、server、
 pod、node；server 页面：client、pod、node；pod 页面：client、server、node），画在控制连接（虚线）之上，
-并按流量由低到高着色。鼠标悬停在节点或连线上会高亮经过它的隧道，点击则在右侧列出这些隧道，在列表中悬停
+并按流量由低到高着色，每条连线标有延迟。鼠标悬停在节点或连线上会高亮经过它的隧道，点击则在右侧列出这些隧道，在列表中悬停
 某个隧道只高亮它的链路。点击某个隧道（只有它经过的连线，或列表中它那一行）会隐藏全景图、显示它的完整链路图：
-本地应用 → client → server → pod → node，包括每一跳的协议、消息体是否加密以及双向字节数；关闭链路图（✕、Esc
+本地应用 → client → server → pod → node，包括每一跳的协议、消息体是否加密、延迟以及双向字节数；关闭链路图（✕、Esc
 或点击对话框外）后恢复显示全景图，保持原来的状态。表格中某个隧道的**详情**也会显示同样的链路图。两者都会实时刷新。
 
 每个页面右上角可以切换**主题和语言**。主题：跟随系统（默认：随系统为浅色或深色）、浅色、深色、吉卜力（暖色
@@ -364,7 +386,8 @@ fibhub/
 ├── internal/
 │   ├── proto/         各模式共用的 arpc 方法、消息与版本号
 │   ├── tunnel/        隧道的一端，每条隧道独立流控
-│   ├── uplink/        pod 或 client 到某个 server 的连接，自动重连
+│   ├── uplink/        pod 或 client 到某个 server 的连接，自动重连并定时 ping
+│   ├── latency/       一条连接的往返时间：滑动平均、最小值、丢包率
 │   ├── wsarpc/        基于 WebSocket 的 arpc
 │   ├── bodycrypt/     arpc 消息 body 的 AES-256-GCM 加密
 │   ├── wscrypt/       承载 server Web 页面的加密 WebSocket

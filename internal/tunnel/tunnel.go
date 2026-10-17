@@ -43,6 +43,9 @@ type Endpoint struct {
 	// is in a table.
 	Pod, Node, Addr, Peer string
 	Created               time.Time
+	// ConnectRTT, at a pod, is how long the connect to the node took, in
+	// milliseconds: about a round trip between the pod and the node.
+	ConnectRTT float64
 
 	table *Table
 	link  Link
@@ -241,6 +244,8 @@ type Snapshot struct {
 	Created time.Time `json:"created"`
 	In      int64     `json:"in"`
 	Out     int64     `json:"out"`
+	// ConnectRTT is the end's ConnectRTT.
+	ConnectRTT float64 `json:"connectRtt,omitempty"`
 }
 
 // Snapshot is the end's state.
@@ -248,7 +253,7 @@ func (e *Endpoint) Snapshot() Snapshot {
 	e.mu.Lock()
 	addr, c := e.Addr, e.conn
 	e.mu.Unlock()
-	s := Snapshot{ID: e.ID, Pod: e.Pod, Node: e.Node, Addr: addr, Peer: e.Peer, Created: e.Created, In: e.in.Load(), Out: e.out.Load()}
+	s := Snapshot{ID: e.ID, Pod: e.Pod, Node: e.Node, Addr: addr, Peer: e.Peer, Created: e.Created, In: e.in.Load(), Out: e.out.Load(), ConnectRTT: e.ConnectRTT}
 	if c != nil {
 		if a := c.LocalAddr(); a != nil {
 			s.Local = a.String()

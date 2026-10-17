@@ -24,6 +24,7 @@ import (
 	fib "github.com/lesismal/fib"
 	"github.com/lesismal/fib/arpc"
 	"github.com/lesismal/fibhub/internal/bodycrypt"
+	"github.com/lesismal/fibhub/internal/latency"
 	"github.com/lesismal/fibhub/internal/proto"
 	"github.com/lesismal/fibhub/internal/wsarpc"
 )
@@ -100,6 +101,9 @@ type Peer struct {
 
 	mu   sync.Mutex
 	info proto.Info
+	// rtt and nodeRTT are what the peer's last ping told.
+	rtt     latency.Stats
+	nodeRTT map[string]latency.Stats
 }
 
 // Info is what the peer told about itself.
@@ -112,6 +116,20 @@ func (p *Peer) Info() proto.Info {
 func (p *Peer) setInfo(info proto.Info) {
 	p.mu.Lock()
 	p.info = info
+	p.mu.Unlock()
+}
+
+// Latency is the round trip between the server and the peer and, for a
+// pod, how long its connects to its nodes took, as the peer measured them.
+func (p *Peer) Latency() proto.PodLatency {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return proto.PodLatency{RTT: p.rtt, NodeRTT: p.nodeRTT}
+}
+
+func (p *Peer) setLatency(req *proto.PingReq) {
+	p.mu.Lock()
+	p.rtt, p.nodeRTT = req.RTT, req.NodeRTT
 	p.mu.Unlock()
 }
 
@@ -317,6 +335,7 @@ func (s *Server) setupArpc(h *arpc.Handler) {
 
 	h.Handle(proto.MethodRegister, s.register)
 	h.Handle(proto.MethodUpdate, s.update)
+	h.Handle(proto.MethodPing, s.ping, false)
 	h.Handle(proto.MethodPods, func(ctx *arpc.Context) { _ = ctx.Write(s.podList()) })
 	h.Handle(proto.MethodSetPodNodes, func(ctx *arpc.Context) {
 		var req proto.SetNodesReq
@@ -399,6 +418,29 @@ func (s *Server) update(ctx *arpc.Context) {
 	if info.Type == proto.TypePod {
 		s.broadcastPods()
 	}
+}
+
+// ping records what a peer measured, and tells a client how fast the pods'
+// links are. It is handled where the connection is read, so its round trip
+// includes the wait behind the tunnel frames read before it.
+func (s *Server) ping(ctx *arpc.Context) {
+	peer := peerOf(ctx.Client)
+	var req proto.PingReq
+	if err := ctx.Bind(&req); err != nil {
+		_ = ctx.Error(err)
+		return
+	}
+	peer.setLatency(&req)
+	var rsp proto.PingRsp
+	if peer.Info().Type == proto.TypeClient {
+		rsp.Pods = map[string]proto.PodLatency{}
+		for _, p := range s.Peers() {
+			if info := p.Info(); info.Type == proto.TypePod {
+				rsp.Pods[info.Name] = p.Latency()
+			}
+		}
+	}
+	_ = ctx.Write(&rsp)
 }
 
 // disconnected forgets a peer whose connection closed, and closes its
@@ -498,7 +540,7 @@ func (s *Server) podList() *proto.PodList {
 	list := &proto.PodList{Server: s.cfg.Name, Pods: []proto.PodView{}}
 	for _, p := range s.Peers() {
 		if info := p.Info(); info.Type == proto.TypePod {
-			list.Pods = append(list.Pods, proto.PodView{Info: info, Addr: p.Addr, Since: p.Since})
+			list.Pods = append(list.Pods, proto.PodView{Info: info, Addr: p.Addr, Since: p.Since, PodLatency: p.Latency()})
 		}
 	}
 	sort.Slice(list.Pods, func(i, j int) bool { return list.Pods[i].Info.Name < list.Pods[j].Info.Name })

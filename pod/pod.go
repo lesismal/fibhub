@@ -22,6 +22,7 @@ import (
 	fib "github.com/lesismal/fib"
 	"github.com/lesismal/fib/arpc"
 	"github.com/lesismal/fibhub/internal/common"
+	"github.com/lesismal/fibhub/internal/latency"
 	"github.com/lesismal/fibhub/internal/proto"
 	"github.com/lesismal/fibhub/internal/tunnel"
 	"github.com/lesismal/fibhub/internal/uplink"
@@ -60,6 +61,8 @@ type Pod struct {
 	mu      sync.Mutex
 	cfg     Config
 	uplinks []*uplink.Uplink
+	// nodeRTT measures, by node name, the connects to the nodes.
+	nodeRTT map[string]*latency.Meter
 }
 
 // Run runs a pod with cfg until ctx ends, saving changes made on its web
@@ -81,7 +84,7 @@ func Run(ctx context.Context, cfg Config, configPath string, out io.Writer, read
 			cfg.Servers[i].Name = cfg.Servers[i].Addr
 		}
 	}
-	p := &Pod{configPath: configPath, out: out, cfg: cfg}
+	p := &Pod{configPath: configPath, out: out, cfg: cfg, nodeRTT: map[string]*latency.Meter{}}
 	// The file keeps what the flags added to it, too.
 	p.saveLocked()
 	engine, err := fib.New(fib.DefaultConfig())
@@ -179,8 +182,34 @@ func (p *Pod) saveLocked() {
 	}
 }
 
+// NodeRTT is, by node name, how long the connects to the nodes took. A
+// node the pod has not connected to is missing.
+func (p *Pod) NodeRTT() map[string]latency.Stats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]latency.Stats, len(p.nodeRTT))
+	for name, m := range p.nodeRTT {
+		out[name] = m.Stats()
+	}
+	return out
+}
+
+// nodeMeter is the meter of the connects to the node named name.
+func (p *Pod) nodeMeter(name string) *latency.Meter {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	m := p.nodeRTT[name]
+	if m == nil {
+		m = &latency.Meter{}
+		p.nodeRTT[name] = m
+	}
+	return m
+}
+
 func (p *Pod) startUplink(sc uplink.Config) *uplink.Uplink {
 	u := uplink.New(p.engine, sc, p.Info, p.setupUplink)
+	// Servers tell clients how fast the pod reaches its nodes.
+	u.OnPing = func(req *proto.PingReq) { req.NodeRTT = p.NodeRTT() }
 	p.mu.Lock()
 	p.uplinks = append(p.uplinks, u)
 	p.mu.Unlock()
@@ -233,9 +262,14 @@ func (p *Pod) openTunnel(u *uplink.Uplink, link *arpc.Client, req *proto.TunnelO
 	if u.Tunnels.Get(req.ID) != nil {
 		return nil, errors.New("pod: tunnel ID in use")
 	}
+	meter := p.nodeMeter(node.Name)
+	start := time.Now()
 	handler := &tunnel.Handler{Open: func(c *fib.Connection) *tunnel.Endpoint {
+		d := time.Since(start)
+		meter.Add(d)
 		e := tunnel.New(u.Tunnels, link, req.ID, true)
 		e.Pod, e.Node, e.Addr, e.Peer = info.Name, node.Name, node.Addr, req.Client
+		e.ConnectRTT = latency.Ms(d)
 		if !u.Tunnels.Add(e) {
 			return nil
 		}
@@ -252,6 +286,7 @@ func (p *Pod) openTunnel(u *uplink.Uplink, link *arpc.Client, req *proto.TunnelO
 		err = <-dialed
 	}
 	if err != nil {
+		meter.Lost()
 		return nil, err
 	}
 	slog.Info("fibhub: tunnel open", "id", req.ID, "client", req.Client, "node", node.Name, "addr", node.Addr)
@@ -265,6 +300,15 @@ func (p *Pod) SetNodes(nodes []proto.Node, from *uplink.Uplink) error {
 		return err
 	}
 	p.mu.Lock()
+	// What was measured of a node goes with it, and a node whose address
+	// changes is measured anew.
+	was, will := proto.Info{Nodes: p.cfg.Nodes}, proto.Info{Nodes: nodes}
+	for name := range p.nodeRTT {
+		o, _ := was.FindNode(name)
+		if n, ok := will.FindNode(name); !ok || n.Addr != o.Addr {
+			delete(p.nodeRTT, name)
+		}
+	}
 	p.cfg.Nodes = append([]proto.Node{}, nodes...)
 	p.saveLocked()
 	uplinks := append([]*uplink.Uplink(nil), p.uplinks...)

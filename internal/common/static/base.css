@@ -31,6 +31,7 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 dialog{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);color:var(--fg);min-width:min(680px,92vw);box-shadow:var(--shadow)}
 dialog table td{padding:4px}
 form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}form.inline input{width:auto;flex:1 1 140px}
+.rtt{font-family:var(--mono);font-size:12px;white-space:nowrap}.rtt-good{color:var(--ok)}.rtt-fair{color:var(--warn,#b7791f)}.rtt-poor{color:var(--bad)}
 .state-registered{color:var(--ok)}.state-failed{color:var(--bad)}.state-connecting{color:var(--muted)}
 .secret{font-family:var(--mono);font-size:12px;margin-right:4px}button.eye{font-size:12px;padding:1px 7px}
 .swap{display:inline-grid;justify-items:start}button.swap{justify-items:center}.swap>span{grid-area:1/1}
@@ -181,6 +182,8 @@ dialog.flow-dlg{width:min(1320px,96vw);max-width:none;max-height:92vh;padding:0;
 .flow-svg .lk.sel .lk-base{opacity:1;filter:drop-shadow(0 0 3px var(--heat))}
 .flow-svg .lk-label text{font-size:11px;fill:var(--muted);font-weight:600;paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
 .flow-svg .lk-label .ico{stroke:var(--ok);--k:var(--ok)}
+.flow-svg .lk-rtt{font-size:10px;font-family:var(--mono);font-weight:600;paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
+.flow-svg .lk-rtt.rtt-good{fill:var(--ok)}.flow-svg .lk-rtt.rtt-fair{fill:var(--warn,#b7791f)}.flow-svg .lk-rtt.rtt-poor{fill:var(--bad)}.flow-svg.chain .lk-rtt{font-size:12px}
 .flow-svg .lk-bytes{font-size:11px;fill:var(--muted);font-family:var(--mono);paint-order:stroke;stroke:var(--card);stroke-width:4px}
 .flow-svg.focus .nd:not(.hi),.flow-svg.focus .lk:not(.hi){opacity:.2}
 @keyframes flow{to{stroke-dashoffset:-40}}

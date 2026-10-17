@@ -39,13 +39,13 @@ Object.assign(zh,{
  'Traffic':'流量热度','low → high':'低 → 高','Tunnel ID':'隧道 ID','Local app':'本地应用','this page':'本页','not visible here':'此处不可见',
  'Only the client sees the local app.':'只有客户端能看到本地应用。','This tunnel is closed.':'该隧道已关闭。',
  'No open tunnels; dashed lines are control links.':'暂无隧道；虚线为控制连接。','Protocol':'协议','Body encryption':'消息体加密',
- 'Version':'版本','OS':'系统','Uptime':'运行时长','arpc over WebSocket':'arpc（WebSocket）','arpc over TCP':'arpc（TCP）',
+ 'Version':'版本','Latency':'延迟','Share':'分担','Connect':'建连','OS':'系统','Uptime':'运行时长','arpc over WebSocket':'arpc（WebSocket）','arpc over TCP':'arpc（TCP）',
  'Web page over WebSocket':'经 WebSocket 的 Web 页面',
  'Forward removed':'转发已移除','Info sent to servers':'信息已发送到服务器','Login saved':'登录已保存','Kick this peer?':'踢出该 peer？'});
 // Texts made of a UI string and names.
 const zhRe=[[/^Nodes of pod (.+) \(via (.+)\)$/,'Pod $1 的节点（经由 $2）'],[/^Nodes of pod (.+)$/,'Pod $1 的节点'],
  [/^Login of the web page of server (.+)$/,'服务器 $1 的 Web 页面登录'],[/^Login of the web page of (.+)$/,'$1 的 Web 页面登录'],
- [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？'],[/^via (.+)$/,'经由 $1'],[/^Tunnels \((\d+)\)$/,'隧道（$1）'],[/^(\d+) forwards$/,'$1 个转发'],[/^(\d+) nodes$/,'$1 个节点']];
+ [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？'],[/^via (.+)$/,'经由 $1'],[/^Tunnels \((\d+)\)$/,'隧道（$1）'],[/^(\d+) forwards$/,'$1 个转发'],[/^(\d+) nodes$/,'$1 个节点'],[/^(\d+)% loss$/,'丢包 $1%'],[/^(.+) · (\d+)% loss$/,'$1 · 丢包 $2%']];
 // Parts of the header's status line.
 const zhMeta=[[' · bodies encrypted',' · 消息体已加密'],[' · up ',' · 已运行 '],[' · settings not saved (no -config)',' · 设置未保存（未指定 -config）']];
 // A table cell's own text, the name in the header and a .raw element's text

@@ -5,8 +5,24 @@ const bytes=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(
 function toast(t,bad){const m=$('msg');m.textContent=t;m.style.background=bad?'var(--bad)':'';m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',3000)}
 async function api(path,body){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j}
+// Round trips, as latency.Stats ({last, avg, min, loss, samples}, in
+// milliseconds). ms is one as text; rttGrade rates a link good, fair or poor
+// by its average and loss; rttText is a link as text, '' before it is
+// measured; rtt is a link as a cell's HTML, its details in the tooltip;
+// rttSum is the stats of a path made of links one after the other, unknown
+// if any of them is.
+const ms=v=>v<1?v.toFixed(2)+' ms':v<10?v.toFixed(1)+' ms':Math.round(v)+' ms';
+const rttGrade=s=>s.loss>=.2||s.avg>=150?'poor':s.loss>=.05||s.avg>=50?'fair':'good';
+const rttLoss=s=>s.loss>=.01?Math.round(s.loss*100)+'% loss':'';
+const rttText=s=>s&&s.samples?ms(s.avg)+(rttLoss(s)?' · '+rttLoss(s):''):'';
+function rtt(s,tip){if(!s||!s.samples)return '<span class="muted">—</span>';
+ return `<span class="rtt rtt-${rttGrade(s)}" title="${esc(tip||`last ${ms(s.last)} · min ${ms(s.min)} · avg ${ms(s.avg)}`)}">${ms(s.avg)}</span>${rttLoss(s)?` <span class="muted">${rttLoss(s)}</span>`:''}`}
+function rttSum(...ls){if(!ls.length||ls.some(s=>!s||!s.samples))return null;
+ return {last:ls.reduce((a,s)=>a+s.last,0),avg:ls.reduce((a,s)=>a+s.avg,0),min:ls.reduce((a,s)=>a+s.min,0),loss:1-ls.reduce((a,s)=>a*(1-s.loss),1),samples:Math.min(...ls.map(s=>s.samples))}}
 function table(head,rows){return rows.length?`<table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`:'<div class="empty">None</div>'}
-function nodeRow(tbody,n={}){const tr=document.createElement('tr');tr.innerHTML=`<td><input placeholder="name" value="${esc(n.name)}"></td><td><input placeholder="10.0.0.5:22" value="${esc(n.addr)}"></td><td><input placeholder="optional" value="${esc(n.desc)}"></td><td><button class="danger" onclick="this.closest('tr').remove()">✕</button></td>`;tbody.appendChild(tr)}
+// nodeRow adds an editable row of node n to tbody, with extra, if given, as
+// the HTML of a cell before the row's ✕.
+function nodeRow(tbody,n={},extra){const tr=document.createElement('tr');tr.innerHTML=`<td><input placeholder="name" value="${esc(n.name)}"></td><td><input placeholder="10.0.0.5:22" value="${esc(n.addr)}"></td><td><input placeholder="optional" value="${esc(n.desc)}"></td>${extra===undefined?'':`<td>${extra}</td>`}<td><button class="danger" onclick="this.closest('tr').remove()">✕</button></td>`;tbody.appendChild(tr)}
 function readNodes(tbody){return [...tbody.querySelectorAll('tr')].map(tr=>{const i=tr.querySelectorAll('input');return{name:i[0].value.trim(),addr:i[1].value.trim(),desc:i[2].value.trim()}}).filter(n=>n.name||n.addr)}
 function stateCell(s){return `<span class="state-${esc(s.state)}">${esc(s.state)}</span>${s.error?`<div class="muted">${esc(s.error)}</div>`:''}`}
 const js=v=>esc(JSON.stringify(v));

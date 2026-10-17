@@ -21,7 +21,15 @@ var indexHTML []byte
 // ServerView is a server and its pods, as the web page shows them.
 type ServerView struct {
 	uplink.Status
-	Pods []proto.PodView `json:"pods"`
+	Pods []PodView `json:"pods"`
+}
+
+// PodView is a pod of a server, as the web page shows it.
+type PodView struct {
+	proto.PodView
+	// Share is the part of the tunnels to the pod that should go through
+	// the server, from 0 to 1, by Weights.
+	Share float64 `json:"share"`
 }
 
 // Status is the client's state, as the web page shows it.
@@ -41,12 +49,29 @@ type Status struct {
 func (c *Client) Status() Status {
 	info := c.Info()
 	st := Status{Name: info.Name, Version: proto.Version, Saved: c.configPath != "", Meta: info.Meta, Servers: []ServerView{}, Forwards: c.Forwards(), WebProxies: c.WebProxies(), Tunnels: c.Tunnels()}
+	// The paths to each pod, to weigh them against each other.
+	paths := map[string][]Path{}
 	for _, u := range c.Uplinks() {
-		v := ServerView{Status: u.Status(), Pods: []proto.PodView{}}
+		v := ServerView{Status: u.Status(), Pods: []PodView{}}
 		if list := c.Pods(u); list != nil && v.State == uplink.StateRegistered {
-			v.Pods = list.Pods
+			for _, p := range list.Pods {
+				v.Pods = append(v.Pods, PodView{PodView: p})
+				paths[p.Info.Name] = append(paths[p.Info.Name], Path{Server: v.RTT, Pod: p.RTT})
+			}
 		}
 		st.Servers = append(st.Servers, v)
+	}
+	weights := map[string][]float64{}
+	for name, ps := range paths {
+		weights[name] = Weights(ps)
+	}
+	// The servers in the same order again, so each takes its pods' weights.
+	for i := range st.Servers {
+		for j := range st.Servers[i].Pods {
+			p := &st.Servers[i].Pods[j]
+			w := weights[p.Info.Name]
+			p.Share, weights[p.Info.Name] = w[0], w[1:]
+		}
 	}
 	return st
 }
