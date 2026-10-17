@@ -74,13 +74,24 @@ func Static(r *fibhttp.Router) {
 		case strings.HasSuffix(name, ".js"):
 			typ = "text/javascript; charset=utf-8"
 		}
-		_ = c.Respond(stdhttp.StatusOK, typ, b)
+		fresh(c, typ, b)
 	})
 }
 
 // Page serves html.
 func Page(html []byte) fibhttp.HandlerFunc {
-	return func(c *fibhttp.Context) { _ = c.Respond(stdhttp.StatusOK, "text/html; charset=utf-8", html) }
+	return func(c *fibhttp.Context) { fresh(c, "text/html; charset=utf-8", html) }
+}
+
+// fresh answers with a page or a file of one, which browsers are to check
+// for each time, so that a page and its styles and scripts change together
+// when fibhub is upgraded.
+func fresh(c *fibhttp.Context, typ string, b []byte) {
+	_ = c.WriteResponse(fibhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Header:     stdhttp.Header{"Content-Type": {typ}, "Cache-Control": {"no-cache"}},
+		Body:       b,
+	})
 }
 
 // LoginPath is where a page's Open button posts "user" and "password": the

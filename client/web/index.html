@@ -6,23 +6,23 @@
 <title>fibhub client</title>
 <link rel="stylesheet" href="/static/base.css">
 <script src="/static/theme.js"></script>
+<script src="/static/workbench.js"></script>
 <script src="/static/i18n.js"></script>
 </head>
 <body>
 <header><h1>fibhub client <span id="name"></span></h1><span id="meta"></span></header>
 <main>
-<section><h2>Servers</h2><div id="servers"></div>
+<section data-view="servers" data-icon="server"><h2>Servers</h2><div id="servers"></div>
 <form class="inline" onsubmit="addServer(event)">
 <input id="sName" placeholder="name (optional)"><input id="sAddr" placeholder="host:7000 or ws://host:7001/fibhub" required><input id="sPass" type="password" placeholder="password" required><input id="sBody" type="password" placeholder="body AES password (optional)">
 <button class="primary">Connect</button></form></section>
-<section><h2>Pods and nodes</h2><div id="pods"></div></section>
-<section><h2>Forwards</h2><div id="forwards"></div>
+<section data-view="pods" data-icon="pod"><h2>Pods and nodes</h2><div id="pods"></div></section>
+<section data-view="forwards" data-icon="forward"><h2>Forwards</h2><div id="forwards"></div>
 <form class="inline" onsubmit="addForward(event)">
 <input id="fListen" placeholder="local address, 127.0.0.1:2222" required><input id="fPod" placeholder="pod" required><input id="fNode" placeholder="node" required>
 <input id="fServer" placeholder="server (optional: any)"><input id="fWeb" type="password" placeholder="web page user:password (optional)"><button class="primary">Forward</button></form></section>
-<section><h2>Web proxies</h2><div id="proxies"></div></section>
-<section><h2>Tunnels<button class="h2btn" onclick="openFlow()">Details</button></h2><div id="tunnels"></div></section>
-<section><h2>Client info</h2>
+<section data-view="tunnels" data-icon="tunnel"><h2>Tunnels<button class="h2btn" onclick="openFlow()">Details</button></h2><div id="tunnels"></div></section>
+<section data-view="info" data-icon="info"><h2>Client info</h2>
 <form class="inline" onsubmit="saveMeta(event)"><input id="metaText" placeholder="key=value, key2=value2 — told to servers"><button class="primary">Update servers</button></form></section>
 </main>
 <dialog id="editor">
@@ -44,10 +44,13 @@ let state={servers:[],forwards:[],webProxies:[],tunnels:[]},metaLoaded=false,edi
 function render(){
  const st=state;$('name').textContent=st.name;$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
  if(!metaLoaded){$('metaText').value=Object.entries(st.meta||{}).map(([k,v])=>k+'='+v).join(', ');metaLoaded=true}
- $('servers').innerHTML=table(['Name','Address','State','Server','Peer ID','Pods','Tunnels','Web page',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
-  <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${esc(s.server)}</td><td>${s.peerId||''}</td><td>${s.pods.length}</td><td>${s.tunnels}</td>
-  <td>${serverPage(s)}</td>
-  <td><button onclick="refreshPods(${js(s.name)})">Query pods</button><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));
+ // Each server's row has its web page, through its web proxy; a web proxy
+ // that is no server's gets a row of its own.
+ const lone=st.webProxies.filter(w=>!st.servers.some(s=>proxyOf(s)===w));
+ const cards=st.servers.map(s=>serverCard(s.name,s.addr,stateCell(s),[['Server',s.server],['Peer ID',s.peerId||''],['Pods',s.pods.length],['Tunnels',s.tunnels],
+   ['Body encryption',s.bodyEncrypted?'AES-256-GCM':'none']],proxyOf(s),`<button onclick="refreshPods(${js(s.name)})">Query pods</button><button class="danger" onclick="delServer(${js(s.name)})">Remove</button>`))
+  .concat(lone.map(w=>serverCard(w.name||w.url,'','<span class="muted">web proxy only</span>',[],w,'')));
+ $('servers').innerHTML=cards.length?`<div class="cards">${cards.join('')}</div>`:'<div class="empty">None</div>';
  const rows=[];st.servers.forEach(s=>s.pods.forEach(p=>rows.push(`<tr><td>${esc(s.name)}</td><td>${esc(p.info.name)}<div class="muted">${esc(p.info.hostname)} ${esc(p.addr)}</div></td>
   <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}
    <button onclick="useNode(${js(s.name)},${js(p.info.name)},${js(n.name)})">Forward…</button></div>`).join('')||'<span class="muted">none</span>'}</td>
@@ -57,12 +60,10 @@ function render(){
   <td>${esc(f.server||'any')}</td><td>${f.error?`<span class="state-failed">${esc(f.error)}</span>`:'<span class="state-registered">listening</span>'}</td>
   ${f.webAuth&&!f.error?loginCells('fw:'+f.listen,f.addr||f.listen,f.webAuth):'<td></td><td></td><td></td>'}
   <td><button onclick="editLogin(${js(f.listen)},${js(f.webAuth||'')},'web page of '+${js(f.pod+'/'+f.node)})">Set login</button><button class="danger" onclick="delForward(${js(f.listen)})">Remove</button></td></tr>`));
- $('proxies').innerHTML=table(['Server','Listen','Server page over WebSocket','User','Password','',''],st.webProxies.map(w=>`<tr><td>${esc(proxyServer(w))}</td>
-  <td>${esc(pageURL(w.addr||w.listen))}</td><td>${esc(w.url)}</td>${loginCells('wp:'+w.listen,w.addr||w.listen,w.webAuth)}
-  <td><button onclick="editLogin(${js(w.listen)},${js(w.webAuth||'')},'web page of server '+${js(proxyServer(w)||w.url)})">Set login</button></td></tr>`));
  $('tunnels').innerHTML=table(['Server','ID','Listen','Pod','Node','Address','Local client','Sent','Received','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
   <td>${esc(t.pod)}</td><td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.remote)}</td><td>${bytes(t.out)}</td><td>${bytes(t.in)}</td><td>${ago(t.created)}</td>
   <td><button onclick="openFlow(${js(t.id)})">Details</button><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+ wbBadge('servers',st.servers.length);wbBadge('pods',rows.length);wbBadge('forwards',st.forwards.length);wbBadge('tunnels',st.tunnels.length);
  flowRefresh();
 }
 // The tunnel diagrams: this client, its forwards, servers, pods and their
@@ -104,10 +105,18 @@ const hostOf=a=>{try{return new URL(String(a).includes('://')?a:'tcp://'+a).host
 // proxyOf is the web proxy that serves server s's web page: the one named
 // after s, or else the one whose URL is on s's host.
 function proxyOf(s){const ws=state.webProxies||[];return ws.find(w=>w.name===s.name)||ws.find(w=>!w.name&&hostOf(w.url)&&hostOf(w.url)===hostOf(s.addr))}
-function proxyServer(w){if(w.name)return w.name;const s=state.servers.find(s=>proxyOf(s)===w);return s?s.name:''}
-function serverPage(s){const w=proxyOf(s);if(!w)return '<span class="muted">no web proxy</span>';const a=w.addr||w.listen,auth=w.webAuth||'',i=auth.indexOf(':');
- return `<div>${esc(pageURL(a))}</div><div class="muted">${auth?`${esc(i<0?auth:auth.slice(0,i))} ${secret('wp:'+w.listen,i<0?'':auth.slice(i+1))}`:'no login'}</div>
-  <button class="primary" onclick="openPage(${js(a)},${js(auth)})">Open</button><button onclick="editLogin(${js(w.listen)},${js(auth)},'web page of server '+${js(s.name)})">Set login</button>`}
+// serverCard is a server's card: its name, address and state, facts, the
+// management page that web proxy w serves (address, login, Open, Set login)
+// and the server's buttons.
+function serverCard(name,addr,state,facts,w,buttons){const dl=fs=>`<dl class="facts">${fs.map(([k,v])=>`<dt>${esc(k)}</dt><dd class="raw">${esc(v)}</dd>`).join('')}</dl>`;
+ let web='<div class="muted">no web proxy</div>';
+ if(w){const a=w.addr||w.listen,auth=w.webAuth||'',i=auth.indexOf(':');
+  web=`<dl class="facts"><dt>Address</dt><dd class="raw">${esc(pageURL(a))}</dd><dt>Via</dt><dd class="raw">${esc(w.url)}</dd>
+   <dt>User</dt><dd class="raw">${auth?esc(i<0?auth:auth.slice(0,i)):''}</dd><dt>Password</dt><dd>${auth?secret('wp:'+w.listen,i<0?'':auth.slice(i+1)):'<span class="muted">no login</span>'}</dd></dl>
+   <div class="card-btns"><button class="primary" onclick="openPage(${js(a)},${js(auth)})">Open</button><button onclick="editLogin(${js(w.listen)},${js(auth)},'web page of server '+${js(name)})">Set login</button></div>`}
+ return `<div class="card"><div class="card-head"><span class="card-ico">${svgIcon(FLOW_ICONS.server)}</span><div class="card-name"><b class="raw">${esc(name)}</b><div class="muted raw">${esc(addr)}</div></div><div class="card-state">${state}</div></div>
+  ${facts.length?dl(facts):''}<div class="card-web"><h4>Management page</h4>${web}</div>${buttons?`<div class="card-btns end">${buttons}</div>`:''}</div>`}
+const svgIcon=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
 let loginFor='';
 function editLogin(listen,auth,what){loginFor=listen;const i=auth.indexOf(':');$('lgTitle').textContent='Login of the '+what;
  $('lgUser').value=i<0?auth:auth.slice(0,i);$('lgPass').value=i<0?'':auth.slice(i+1);loginEd.showModal()}
@@ -118,7 +127,7 @@ const call=async(path,body,ok)=>{try{await api(path,body);toast(ok);load();retur
 async function addServer(e){e.preventDefault();if(await call('/api/servers',{name:$('sName').value.trim(),addr:$('sAddr').value.trim(),password:$('sPass').value,bodyPassword:$('sBody').value},'Server added'))e.target.reset()}
 function delServer(name){if(confirm('Disconnect from '+name+'?'))call('/api/servers/delete',{name},'Removed')}
 function refreshPods(server){call('/api/pods/refresh',{server},'Pods queried')}
-function useNode(server,pod,node){$('fServer').value=server;$('fPod').value=pod;$('fNode').value=node;$('fListen').focus()}
+function useNode(server,pod,node){wbShow('forwards');$('fServer').value=server;$('fPod').value=pod;$('fNode').value=node;$('fListen').focus()}
 async function addForward(e){e.preventDefault();if(await call('/api/forwards',{listen:$('fListen').value.trim(),pod:$('fPod').value.trim(),node:$('fNode').value.trim(),server:$('fServer').value.trim(),webAuth:$('fWeb').value},'Forward added'))e.target.reset()}
 function delForward(listen){call('/api/forwards/delete',{listen},'Forward removed')}
 function closeTunnel(server,id){call('/api/tunnels/close',{server,id},'Tunnel closed')}

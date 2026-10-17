@@ -26,6 +26,10 @@ function openPage(addr,auth){const url=pageURL(addr);if(!auth){window.open(url+'
  const i=auth.indexOf(':'),f=document.createElement('form');f.method='POST';f.action=url+'/login';f.target='_blank';f.rel='noopener';
  for(const[k,v]of[['user',i<0?auth:auth.slice(0,i)],['password',i<0?'':auth.slice(i+1)]]){const e=document.createElement('input');e.type='hidden';e.name=k;e.value=v;f.appendChild(e)}
  document.body.appendChild(f);f.submit();f.remove()}
+// pageLine is this page's address, user, password and Open, for the footer.
+function pageLine(key,addr,auth){const i=(auth||'').indexOf(':'),user=i<0?auth:auth.slice(0,i),pass=i<0?'':auth.slice(i+1);
+ return `<span class="muted">This web page</span><span class="raw node">${esc(pageURL(addr))}</span>${auth?`<span class="raw">${esc(user)}</span><span>${secret(key,pass)}</span>`:'<span class="muted">no login</span>'}
+  <button class="primary" onclick="openPage(${js(addr)},${js(auth||'')})">Open</button>`}
 // loginCells are the user, password and Open cells of the page at addr.
 function loginCells(key,addr,auth){const i=(auth||'').indexOf(':'),user=i<0?auth:auth.slice(0,i),pass=i<0?'':auth.slice(i+1);
  return `<td>${auth?esc(user):'<span class="muted">no login</span>'}</td><td>${auth?secret(key,pass):''}</td><td><button class="primary" onclick="openPage(${js(addr)},${js(auth||'')})">Open</button></td>`}

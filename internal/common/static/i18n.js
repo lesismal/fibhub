@@ -20,7 +20,7 @@ const zh={
  'Connect':'连接','Forward':'转发','Forward…':'转发…','Update servers':'更新到服务器','Save':'保存','Open':'打开','Show':'显示','Hide':'隐藏',
  'Set login':'设置登录','Query pods':'查询 Pod','Remove':'移除','Revert':'还原','Save and tell servers':'保存并通知服务器',
  // states and notes
- 'None':'无','none':'无','no login':'无登录','no web proxy':'无 Web 代理','bodies encrypted':'消息体已加密','listening':'监听中','any':'任意',
+ 'None':'无','none':'无','no login':'无登录','no web proxy':'无 Web 代理','web proxy only':'仅 Web 代理','Management page':'管理页面','Via':'经由','bodies encrypted':'消息体已加密','listening':'监听中','any':'任意',
  'registered':'已注册','connecting':'连接中','failed':'失败','stopped':'已停止',
  'Empty user and password: the page has no login.':'用户名和密码都留空：该页面不需要登录。',
  // the theme and language pickers
@@ -45,12 +45,12 @@ Object.assign(zh,{
 // Texts made of a UI string and names.
 const zhRe=[[/^Nodes of pod (.+) \(via (.+)\)$/,'Pod $1 的节点（经由 $2）'],[/^Nodes of pod (.+)$/,'Pod $1 的节点'],
  [/^Login of the web page of server (.+)$/,'服务器 $1 的 Web 页面登录'],[/^Login of the web page of (.+)$/,'$1 的 Web 页面登录'],
- [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？'],[/^Tunnels \((\d+)\)$/,'隧道（$1）'],[/^(\d+) forwards$/,'$1 个转发'],[/^(\d+) nodes$/,'$1 个节点']];
+ [/^Disconnect from (.+)\?$/,'断开与 $1 的连接？'],[/^via (.+)$/,'经由 $1'],[/^Tunnels \((\d+)\)$/,'隧道（$1）'],[/^(\d+) forwards$/,'$1 个转发'],[/^(\d+) nodes$/,'$1 个节点']];
 // Parts of the header's status line.
 const zhMeta=[[' · bodies encrypted',' · 消息体已加密'],[' · up ',' · 已运行 '],[' · settings not saved (no -config)',' · 设置未保存（未指定 -config）']];
-// A table cell's own text, and the name in the header, are data (a name, an
-// address), except these.
-const cellOK=new Set(['any']);
+// A table cell's own text, the name in the header and a .raw element's text
+// are data (a name, an address), except these.
+const cellOK=new Set(['any','none']);
 
 const langs=[['auto','System'],['en','English'],['zh','中文']];
 const saved=()=>{const m=document.cookie.match(/(?:^|;\s*)fibhub-lang=([a-z]+)/);return m&&langs.some(l=>l[0]===m[1])?m[1]:'auto'};
@@ -60,7 +60,7 @@ let pref=saved(),lang=pref==='auto'?system():pref;
 // tr is s in Chinese, or null if it is no UI string; el holds it, as text,
 // or as a placeholder if ph.
 function tr(s,el,ph){const k=s.trim(),d=ph?zhPh:zh;if(!k)return null;
- if(Object.hasOwn(d,k)&&!(el&&(el.tagName==='TD'||el.id==='name')&&!cellOK.has(k)))return s.replace(k,d[k]);
+ if(Object.hasOwn(d,k)&&!(el&&(el.tagName==='TD'||el.id==='name'||el.classList.contains('raw'))&&!cellOK.has(k)))return s.replace(k,d[k]);
  for(const[re,r]of zhRe)if(re.test(k))return s.replace(k,k.replace(re,r));
  // A diagram's columns, "Clients → Server → Pods".
  const parts=k.split(' → ');if(parts.length>1&&parts.every(p=>Object.hasOwn(zh,p)))return s.replace(k,parts.map(p=>zh[p]).join(' → '));

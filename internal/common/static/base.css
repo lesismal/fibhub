@@ -5,7 +5,7 @@
 :root[data-theme=dark]{--bg:#14171d;--fg:#e4e7ee;--muted:#959cad;--card:#1c2028;--line:#2c313c;--accent:#5b8ff0;--bad:#e06464;--ok:#4cbb72;color-scheme:dark}
 @media (prefers-color-scheme:dark){:root:not([data-theme]),:root[data-theme=auto]{--bg:#14171d;--fg:#e4e7ee;--muted:#959cad;--card:#1c2028;--line:#2c313c;--accent:#5b8ff0;--bad:#e06464;--ok:#4cbb72;color-scheme:dark}}
 :root[data-theme=ghibli]{--bg:#f4edda;--fg:#3a3a2c;--muted:#83795d;--card:#fffaee;--line:#e4d7b5;--accent:#5d8f55;--accent-fg:#fffaee;--bad:#c2573c;--ok:#4c8a3a;
- --head:linear-gradient(180deg,#8fcbee 0%,#c4e5f7 70%,#e3f2f8 100%);--field:#fffdf6;--radius:16px;--ctl-radius:999px;
+ --head:var(--card);--field:#fffdf6;--radius:16px;--ctl-radius:999px;
  --shadow:0 2px 0 #e4d7b5,0 10px 26px rgba(93,143,85,.13);--font:"Hiragino Maru Gothic ProN","Yuanti SC","Kosugi Maru",ui-rounded,"Nunito","Trebuchet MS",sans-serif;color-scheme:light}
 :root[data-theme=mecha]{--bg:#090d12;--fg:#d3e2ee;--muted:#6a8195;--card:#0f161e;--line:#1d3647;--accent:#00d5ff;--accent-fg:#001520;--bad:#ff3d55;--ok:#38f59a;--warn:#ffae00;
  --head:linear-gradient(180deg,#121c26,#0c131a);--field:#070b0f;--radius:0;--ctl-radius:0;--shadow:0 0 0 1px rgba(0,213,255,.06),0 0 22px rgba(0,213,255,.07);
@@ -20,8 +20,8 @@ main{padding:16px 20px;max-width:1200px;margin:0 auto;position:relative}
 section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;overflow:auto;box-shadow:var(--shadow)}
 section h2{font-size:15px;margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:7px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}tr:last-child td{border-bottom:0}
-button{font:inherit;border:1px solid var(--line);background:var(--field);color:var(--fg);border-radius:var(--ctl-radius);padding:3px 9px;cursor:pointer;margin:1px}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;white-space:nowrap}tr:last-child td{border-bottom:0}
+button{font:inherit;white-space:nowrap;border:1px solid var(--line);background:var(--field);color:var(--fg);border-radius:var(--ctl-radius);padding:3px 9px;cursor:pointer;margin:1px}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}button.danger{color:var(--bad)}
 input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:min(var(--ctl-radius),6px);background:var(--field);color:var(--fg);width:100%}
@@ -36,16 +36,64 @@ form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px
 .swap{display:inline-grid;justify-items:start}button.swap{justify-items:center}.swap>span{grid-area:1/1}
 .swap>span+span,.swap.on>span:first-child{visibility:hidden}.swap.on>span+span{visibility:visible}
 
-/* Ghibli: a summer sky with clouds over a paper page, rolling hills at the bottom. */
-[data-theme=ghibli] body{background:linear-gradient(180deg,#e3f2f8 0,var(--bg) 260px) no-repeat,var(--bg)}
-[data-theme=ghibli] header{border-bottom:0;padding-bottom:30px;
- background:radial-gradient(ellipse 70px 22px at 78% 34%,#fff 60%,transparent 62%),radial-gradient(ellipse 46px 18px at 84% 26%,#fff 60%,transparent 62%),
- radial-gradient(ellipse 90px 20px at 30% 70%,rgba(255,255,255,.85) 60%,transparent 62%),radial-gradient(ellipse 50px 16px at 36% 60%,rgba(255,255,255,.85) 60%,transparent 62%),var(--head)}
-[data-theme=ghibli] header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:26px;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 26' preserveAspectRatio='none'%3E%3Cpath d='M0 26V14C40 2 80 4 120 12S200 24 250 12 340 0 400 10V26Z' fill='%2397c47e'/%3E%3Cpath d='M0 26V20C60 10 110 12 170 19S280 26 330 17 380 14 400 16V26Z' fill='%23f4edda'/%3E%3C/svg%3E") center/100% 100% no-repeat}
-[data-theme=ghibli] header h1{color:#2f5a35;letter-spacing:.02em}[data-theme=ghibli] header h1 span{color:#3f6f8f}[data-theme=ghibli] header>span{color:#3f6f8f}
+/* Workbench (workbench.js): the menu on the left, the picked view on the right, under the header. */
+.wb{display:grid;grid-template-columns:var(--side-w,232px) minmax(0,1fr);min-height:100vh}.wb.mini{--side-w:64px}
+.wb-side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:var(--card);border-right:1px solid var(--line);overflow:hidden auto;z-index:3}
+.wb-brand{display:flex;align-items:center;gap:10px;padding:14px 16px;min-height:62px;border-bottom:1px solid var(--line)}
+.wb-logo svg{display:block;width:30px;height:30px;padding:5px;border-radius:min(var(--radius),9px);background:var(--accent);fill:none;stroke:var(--accent-fg);stroke-width:1.8;stroke-linecap:round}
+.wb-brand h1{font-size:15px;margin:0;line-height:1.25;min-width:0}
+.wb-brand h1 span{display:block;font-size:12px;font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wb-nav{display:flex;flex-direction:column;gap:2px;padding:10px 8px;flex:1}
+.wb-item{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:min(var(--radius),8px);color:var(--fg);text-decoration:none;white-space:nowrap;position:relative}
+.wb-item svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
+.wb-item:hover{background:var(--field)}.wb-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.wb-item.on{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-weight:600}.wb-item.on svg{opacity:1}
+.wb-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.wb-badge{font-size:11px;line-height:18px;min-width:20px;padding:0 6px;text-align:center;border-radius:999px;background:var(--field);color:var(--muted);border:1px solid var(--line);font-weight:500}
+.wb-badge:empty{display:none}.wb-item.on .wb-badge{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.wb-foot{display:flex;gap:8px;align-items:flex-end;padding:10px 12px 12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.wb-foot #meta{flex:1;min-width:0;overflow-wrap:break-word;line-height:1.5}
+.wb-fold{flex:none;padding:4px;margin:0;line-height:0}.wb-fold svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.wb.mini .wb-brand{justify-content:center;padding:14px 0}.wb.mini .wb-brand h1,.wb.mini .wb-label,.wb.mini #meta{display:none}
+.wb.mini .wb-item{justify-content:center;padding:9px 0}.wb.mini .wb-badge{position:absolute;top:1px;right:5px;font-size:9px;line-height:14px;min-width:0;padding:0 4px}
+.wb.mini .wb-foot{justify-content:center;padding:10px 0}.wb.mini .wb-fold svg{transform:rotate(180deg)}
+.wb-work{min-width:0;display:flex;flex-direction:column}
+.wb-work header{align-items:center;min-height:62px;position:sticky;top:0;z-index:2}
+.wb-title{font-size:18px;font-weight:650}.wb-actions{display:flex;gap:6px}.wb-actions:empty{display:none}
+.wb-work main{max-width:1400px;width:100%;margin:0;flex:1}
+.wb-work section>h2{display:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:14px;padding:14px}
+.card{border:1px solid var(--line);border-radius:min(var(--radius),12px);background:var(--card);padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card-head{display:flex;gap:12px;align-items:center}.card-name{flex:1;min-width:0}.card-name b{font-size:15px}.card-name .muted{font-size:12px;font-family:var(--mono);overflow-wrap:anywhere}
+.card-state{text-align:right;font-size:13px}.card-state .muted{font-size:12px}
+.card-ico svg{display:block;width:38px;height:38px;padding:8px;border-radius:min(var(--radius),10px);fill:none;stroke:var(--k-server);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;background:color-mix(in srgb,var(--k-server) 13%,var(--card))}
+.facts{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}.facts dt{color:var(--muted)}.facts dd{margin:0;min-width:0;overflow-wrap:anywhere;font-family:var(--mono);font-size:12px}
+.card-web{border-top:1px dashed var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.card-web h4{margin:0;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.card-btns{display:flex;gap:6px;flex-wrap:wrap}.card-btns button{margin:0}.card-btns.end{justify-content:flex-end;border-top:1px solid var(--line);padding-top:10px}
+.wb-footer{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 20px;border-top:1px solid var(--line);background:var(--card);font-size:13px}
+.wb-footer:empty{display:none}.wb-footer button{margin:0}
+@media (max-width:760px){.wb,.wb.mini{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr}
+ .wb-side{position:sticky;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+ .wb-brand,.wb.mini .wb-brand{justify-content:flex-start;padding:10px 16px;min-height:0}.wb.mini .wb-brand h1{display:block}
+ .wb-nav{flex:none;flex-direction:row;align-items:center;overflow-x:auto;padding:6px 8px;gap:4px}.wb-item,.wb.mini .wb-item{flex:none;padding:7px 10px}.wb.mini .wb-label{display:inline}
+ .wb.mini .wb-badge{position:static;font-size:11px;line-height:18px;padding:0 6px}.wb-foot{display:none}
+ .wb-work header{position:static;padding:10px 16px;min-height:0}.wb-work main{padding:12px 16px}.wb-footer{padding:8px 16px}}
+
+/* Ghibli: warm paper, leaf green and rounded, hand-drawn edges, rolling hills at the bottom. */
+[data-theme=ghibli] header{border-bottom:1.5px dashed var(--line)}
+[data-theme=ghibli] .wb-brand h1{color:#2f5a35;letter-spacing:.02em}[data-theme=ghibli] .wb-brand h1 span{color:#3f6f8f}
+[data-theme=ghibli] .wb-title{color:#2f5a35;letter-spacing:.02em}[data-theme=ghibli] .wb-title::before{content:"🍃 "}
+[data-theme=ghibli] .wb-side{border-right:1.5px dashed var(--line)}
+[data-theme=ghibli] .wb-brand{border-bottom:1.5px dashed var(--line)}[data-theme=ghibli] .wb-foot{border-top:1.5px dashed var(--line)}
+[data-theme=ghibli] .wb-item{border-radius:999px}[data-theme=ghibli] .wb-item:hover{background:#f8f1dd}
+[data-theme=ghibli] .wb-item.on{background:var(--accent);color:var(--accent-fg);box-shadow:0 2px 0 #3f6d3a}[data-theme=ghibli] .wb-item.on .wb-badge{background:var(--accent-fg);color:var(--accent);border-color:transparent}
+[data-theme=ghibli] .wb-footer{border-top:1.5px dashed var(--line);background:rgba(255,250,238,.92)}
+[data-theme=ghibli] .card{border-width:1.5px;box-shadow:0 2px 0 var(--line)}
+[data-theme=ghibli] .wb-logo svg{border-radius:50%;box-shadow:0 2px 0 #3f6d3a}
 [data-theme=ghibli] header .pref{color:#2f5a35}
 [data-theme=ghibli] section{border-width:1.5px}
-[data-theme=ghibli] section h2{color:#2f5a35;border-bottom-style:dashed}[data-theme=ghibli] section h2::before{content:"🍃 "}
+[data-theme=ghibli] section h2{color:#2f5a35;border-bottom-style:dashed}
 [data-theme=ghibli] tbody tr:hover{background:#f8f1dd}
 [data-theme=ghibli] button{padding:3px 12px}[data-theme=ghibli] button.primary{box-shadow:0 2px 0 #3f6d3a}
 [data-theme=ghibli] button.primary:active{transform:translateY(1px);box-shadow:0 1px 0 #3f6d3a}
@@ -58,8 +106,19 @@ form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px
 [data-theme=mecha] body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:20;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
 [data-theme=mecha] header{border-bottom:0;padding-bottom:20px;text-transform:uppercase;letter-spacing:.12em}
 [data-theme=mecha] header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:repeating-linear-gradient(-45deg,var(--warn) 0 10px,#111 10px 20px)}
-[data-theme=mecha] header h1{color:var(--accent);text-shadow:0 0 10px rgba(0,213,255,.55)}[data-theme=mecha] header h1 span{color:var(--warn);text-shadow:none}
-[data-theme=mecha] header>span{font-size:12px}
+[data-theme=mecha] .wb-brand h1{color:var(--accent);text-shadow:0 0 10px rgba(0,213,255,.55);text-transform:uppercase;letter-spacing:.12em;font-size:13px}
+[data-theme=mecha] .wb-brand h1 span{color:var(--warn);text-shadow:none}
+[data-theme=mecha] .wb-title{color:var(--accent);text-transform:uppercase;letter-spacing:.14em;font-size:15px;text-shadow:0 0 10px rgba(0,213,255,.45)}
+[data-theme=mecha] .wb-title::before{content:"▮▮ ";color:var(--warn);font-size:11px;vertical-align:2px;text-shadow:none}
+[data-theme=mecha] .wb-side{background:var(--head);border-right:1px solid var(--line);box-shadow:inset -1px 0 0 rgba(0,213,255,.12)}
+[data-theme=mecha] .wb-brand{border-bottom:2px solid var(--accent)}
+[data-theme=mecha] .wb-item{text-transform:uppercase;letter-spacing:.1em;font-size:12px;border-left:3px solid transparent}
+[data-theme=mecha] .wb-item:hover{background:rgba(0,213,255,.06)}
+[data-theme=mecha] .wb-item.on{background:linear-gradient(90deg,rgba(0,213,255,.16),transparent);border-left-color:var(--warn);text-shadow:0 0 8px rgba(0,213,255,.6)}
+[data-theme=mecha] .wb-footer{background:var(--head);border-top:1px solid var(--accent);font-family:var(--mono);box-shadow:0 -6px 18px rgba(0,213,255,.06)}
+[data-theme=mecha] .card{border-color:var(--line);background:linear-gradient(225deg,var(--accent) 0 8px,transparent 8px) no-repeat,var(--card);clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%)}
+[data-theme=mecha] .card-web h4{color:var(--warn);letter-spacing:.12em}
+[data-theme=mecha] .wb-badge{background:transparent;font-family:var(--mono)}[data-theme=mecha] .wb-logo svg{box-shadow:0 0 12px rgba(0,213,255,.6)}
 [data-theme=mecha] section{border-color:var(--line);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));
  background:linear-gradient(225deg,var(--accent) 0 14px,transparent 14px) no-repeat,linear-gradient(45deg,var(--warn) 0 14px,transparent 14px) no-repeat,var(--card)}
 [data-theme=mecha] section h2{text-transform:uppercase;letter-spacing:.14em;font-size:13px;color:var(--accent);border-left:3px solid var(--warn);background:linear-gradient(90deg,rgba(0,213,255,.1),transparent 60%)}
@@ -79,7 +138,7 @@ form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px
 :root{--k-app:#64748b;--k-client:#2f6fde;--k-forward:#0e8f9c;--k-server:#2b8a6b;--k-pod:#ad7a2b;--k-node:#7b5bd6;--heat1:#4a78b8;--heat2:#b8892e;--heat3:#c8562f}
 :root[data-theme=ghibli]{--k-app:#7d7660;--k-client:#4f7fa8;--k-forward:#3f8f8a;--k-server:#5d8f55;--k-pod:#b07a3a;--k-node:#a0607a;--heat1:#6c9bc0;--heat2:#c09040;--heat3:#c2573c}
 :root[data-theme=mecha]{--k-app:#6a8195;--k-client:#00d5ff;--k-forward:#5ef0ff;--k-server:#38f59a;--k-pod:#ffae00;--k-node:#c77dff;--heat1:#00a8d6;--heat2:#ffae00;--heat3:#ff3d55}
-h2 .h2btn{float:right;font-size:12px;font-weight:400;padding:1px 9px;margin:-2px 0}
+h2 .h2btn{float:right;font-size:12px;font-weight:400;padding:1px 9px;margin:-2px 0}.wb-actions .h2btn{float:none;margin:0;font-size:13px;padding:3px 12px}
 dialog.flow-dlg{width:min(1320px,96vw);max-width:none;max-height:92vh;padding:0;overflow:hidden}
 .flow-dlg[open]{display:flex;flex-direction:column}
 .flow-head{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}

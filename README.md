@@ -315,17 +315,24 @@ password; a wrong password gets nothing.
 
 ## Web pages
 
+Each page is a workbench: a menu on the left, with an item per view and its count (servers, pods,
+forwards, tunnels, ...), and on the right the view picked, under a header with its title, its actions
+and the theme and language pickers. The URL keeps the view (`#/tunnels`), so a reload or a link opens it;
+the menu folds to icons with the button at its bottom, and on a phone it becomes a row above the view.
+
 - **server**: pods (with nodes), clients, tunnels with bytes up/down. Query a pod, edit its nodes (saved
   on the pod), kick a peer, close a tunnel.
 - **pod**: its servers and their state, the nodes it can reach (edit and save; every server hears of the
   change), its tunnels.
 - **client**: its servers, their pods and nodes (edit a pod's nodes through the server), its forwards
-  (add/remove while running), its web proxies, its tunnels, and the meta it tells servers. Each server's
-  row shows its web page, through the web proxy named after it (or else on its host). A web proxy or
-  forward shows its page's user and password (hidden until **Show**), an **Open** button that opens the
-  page already logged in, and **Set login** to change the `webAuth` it keeps in the config.
+  (add/remove while running), its tunnels, and the meta it tells servers. Each server is a card that
+  also holds its management page: the web proxy that serves it (the one named after the server, or else
+  the one on its host), with its local address, the server it goes through, the user and password
+  (hidden until **Show**), **Open**, which opens the page already logged in, and **Set login**, which
+  changes the `webAuth` kept in the config. A web proxy that is no server's gets a card of its own. A
+  forward to a web page shows the same login, **Open** and **Set login**.
 
-The server and pod pages also show their own address, user and password, with the same **Open**.
+The server and pod pages show their own address, user and password in the footer, with the same **Open**.
 **Open** posts the user and password to the page's `/login`, which answers with a session cookie (30
 days, signed with the page's `webAuth`), so the page asks for nothing; basic auth works as before.
 
@@ -339,7 +346,7 @@ hop's protocol, whether bodies are encrypted, and the bytes each way; closing it
 brings the map back as it was. **Details** on a tunnel in the table shows the same path. Both update live.
 
 **Theme and language**, at the top right of every page. Theme: System (the default: light or dark as
-the system is), Light, Dark, Ghibli (a summer sky over paper and hills) or Mecha (a gunmetal console with
+the system is), Light, Dark, Ghibli (warm paper and leaf green, with hills at the bottom) or Mecha (a gunmetal console with
 hazard stripes and glowing cyan). Language: System (the default: Chinese if the browser's language is
 Chinese, else English), English or 中文. A pick holds until changed, and is kept in a cookie, so it
 applies to every fibhub page on the same host, whatever its port.
