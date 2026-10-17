@@ -332,9 +332,11 @@ days, signed with the page's `webAuth`), so the page asks for nothing; basic aut
 **Tunnel diagrams**: **Details** on the Tunnels section opens a map of every open tunnel across the
 page's columns (a client's forwards, servers, pods and nodes; a server's clients, pods and nodes; a pod's
 clients, servers and nodes), drawn over the control links (dashed) and colored by traffic, low to high.
-Hovering a node or link lights up the tunnels through it; clicking one lists them on the side. **Details**
-on a tunnel, there or in the table, shows its whole path: local app → client → server → pod → node, with
-each hop's protocol, whether bodies are encrypted, and the bytes each way. Both update live.
+Hovering a node or link lights up the tunnels through it; clicking one lists them on the side, where
+hovering a tunnel lights up just its path. Clicking a tunnel (a link only it runs over, or its row in the
+list) shows its whole path in place of the map: local app → client → server → pod → node, with each
+hop's protocol, whether bodies are encrypted, and the bytes each way; closing it (✕, Esc or outside)
+brings the map back as it was. **Details** on a tunnel in the table shows the same path. Both update live.
 
 **Theme and language**, at the top right of every page. Theme: System (the default: light or dark as
 the system is), Light, Dark, Ghibli (a summer sky over paper and hills) or Mecha (a gunmetal console with

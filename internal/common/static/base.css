@@ -97,7 +97,7 @@ dialog.flow-dlg{width:min(1320px,96vw);max-width:none;max-height:92vh;padding:0;
 .flow-side dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 12px}.flow-side dt{color:var(--muted)}.flow-side dd{margin:0;word-break:break-all;font-family:var(--mono);font-size:12px}
 .fs-head{display:flex;gap:12px;align-items:center}.fs-head b{font-size:16px}
 .nd-ico svg{width:40px;height:40px;padding:8px;border-radius:min(var(--radius),12px);flex:none;fill:none;stroke:var(--k);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;background:color-mix(in srgb,var(--k) 13%,var(--card))}
-.ft{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)}.ft:last-child{border-bottom:0}.ft .muted{font-size:12px}
+.ft{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:7px 6px;margin:0 -6px;border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer}.ft:hover{background:var(--field)}.ft:last-child{border-bottom:0}.ft .muted{font-size:12px}
 @media (max-width:820px){.flow-body{flex-direction:column;overflow:auto}.flow-side{width:auto;border-left:0;border-top:1px solid var(--line)}}
 .flow-svg{display:block;width:100%;height:auto;font-family:var(--font)}
 .flow-svg .colh{font-size:12px;fill:var(--muted);letter-spacing:.06em}
@@ -118,6 +118,7 @@ dialog.flow-dlg{width:min(1320px,96vw);max-width:none;max-height:92vh;padding:0;
 .flow-svg .h1{--heat:var(--heat1)}.flow-svg .h2{--heat:var(--heat2)}.flow-svg .h3{--heat:var(--heat3)}
 .flow-svg .lk-base{stroke:var(--heat);opacity:.85}.flow-svg .lk.dash .lk-base{stroke:var(--muted);stroke-dasharray:4 5;opacity:.55}
 .flow-svg .lk-flow{stroke:color-mix(in srgb,var(--heat) 30%,#fff);stroke-dasharray:10 30;animation:flow 1.4s linear infinite;opacity:.95}.flow-svg .lk-flow.rev{animation-direction:reverse}
+.flow-svg .lk.one:hover .lk-base{opacity:1;filter:drop-shadow(0 0 3px var(--heat))}
 .flow-svg .lk.sel .lk-base{opacity:1;filter:drop-shadow(0 0 3px var(--heat))}
 .flow-svg .lk-label text{font-size:11px;fill:var(--muted);font-weight:600;paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
 .flow-svg .lk-label .ico{stroke:var(--ok);--k:var(--ok)}

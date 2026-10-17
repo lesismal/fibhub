@@ -5,6 +5,9 @@
 // flowAll(), the graph of its tunnels, and flowOne(id), the graph of
 // tunnel id or null once it is closed, both made with flowGraph, and calls
 // flowRefresh() after every render so an open diagram stays current.
+// Clicking a tunnel on the map (a link only it runs over, or its row in the
+// side list) shows its path in place of the map; closing the path (✕, Esc
+// or outside the dialog) shows the map again, as it was.
 
 const FLOW_ICONS={
  app:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18M7 12.5l2.5 2-2.5 2M12 16.5h4.5"/>',
@@ -33,17 +36,28 @@ function flowGraph(cols){const g={cols,nodes:[],links:[],tunnels:{},byId:{}};
   for(let i=0;i+1<path.length;i++){const l=g.link(path[i],path[i+1],labels&&labels[i]);l.dashed=false;l.tunnels.add(t.id);l.up+=t.up;l.down+=t.down}};
  return g}
 
-let flowView=null,flowSel=null,flowBack=false;
+let flowView=null,flowSel=null,flowBack=false,flowMap=null;
 function flowDialog(){let d=$('flowDlg');if(d)return d;
  d=document.createElement('dialog');d.id='flowDlg';d.className='flow-dlg';
  d.innerHTML=`<div class="flow-head"><button class="flow-back" onclick="openFlow()">← All tunnels</button><div class="flow-title"><h3></h3><div class="muted"></div></div>
   <div class="flow-legend"><span><i class="lg-line"></i>Tunnel</span><span><i class="lg-dash"></i>Control link</span><span>Traffic</span><span class="lg-heat"><i class="h1"></i><i class="h2"></i><i class="h3"></i></span><span>low → high</span></div>
-  <button class="flow-x" onclick="$('flowDlg').close()" aria-label="Close">✕</button></div>
+  <button class="flow-x" onclick="flowClose()" aria-label="Close">✕</button></div>
   <div class="flow-chips"></div><div class="flow-body"><div class="flow-canvas"></div><aside class="flow-side"></aside></div>`;
- d.addEventListener('click',e=>{if(e.target===d)d.close()});document.body.appendChild(d);return d}
-// openFlow shows every tunnel, or tunnel id's path.
-function openFlow(id){const d=flowDialog();flowBack=id!==undefined&&d.open&&flowView&&flowView.id===undefined;
- flowView={id};flowSel=null;flowRender();if(!d.open)d.showModal()}
+ d.addEventListener('click',e=>{if(e.target===d)flowClose()});
+ d.addEventListener('cancel',e=>{if(flowBack){e.preventDefault();openFlow()}});
+ document.body.appendChild(d);return d}
+// openFlow shows every tunnel, or tunnel id's path. A path opened from the
+// map keeps what the map had selected and where it was scrolled, for when
+// the map comes back.
+function openFlow(id){const d=flowDialog(),fromMap=d.open&&flowView&&flowView.id===undefined,c=d.querySelector('.flow-canvas');
+ if(id!==undefined&&fromMap)flowMap={sel:flowSel,top:c.scrollTop,left:c.scrollLeft};
+ const back=id===undefined&&flowBack&&flowMap;flowBack=id!==undefined&&fromMap;
+ flowView={id};flowSel=back?flowMap.sel:null;flowRender();
+ if(back){c.scrollTop=flowMap.top;c.scrollLeft=flowMap.left}else c.scrollTop=c.scrollLeft=0;
+ if(!d.open)d.showModal()}
+// flowClose goes back to the map from a path opened on it, and otherwise
+// closes the dialog.
+function flowClose(){if(flowBack)openFlow();else $('flowDlg').close()}
 function flowRefresh(){const d=$('flowDlg');if(d&&d.open)flowRender()}
 
 function flowRender(){const d=$('flowDlg'),one=flowView.id!==undefined,g=one?flowOne(flowView.id):flowAll();
@@ -101,15 +115,17 @@ function flowSVG(g){const theme=document.documentElement.dataset.theme,rx=theme=
 
 // flowWire makes hovering a node or link light up the tunnels through it,
 // and clicking one show it on the side.
-function flowWire(d,g){const svg=d.querySelector('.flow-svg');
- const focus=(ts,ids)=>{svg.classList.add('focus');
-  svg.querySelectorAll('.lk').forEach(e=>{const l=g.links.find(l=>l.key===e.dataset.k);e.classList.toggle('hi',[...l.tunnels].some(t=>ts.has(t))||l.dashed&&(ids.has(l.from)&&ids.has(l.to)))});
-  svg.querySelectorAll('.nd').forEach(e=>{const x=g.byId[e.dataset.id];e.classList.toggle('hi',ids.has(x.id)||[...x.tunnels].some(t=>ts.has(t)))})};
+function flowFocus(svg,g,ts,ids){svg.classList.add('focus');
+ svg.querySelectorAll('.lk').forEach(e=>{const l=g.links.find(l=>l.key===e.dataset.k);e.classList.toggle('hi',[...l.tunnels].some(t=>ts.has(t))||l.dashed&&(ids.has(l.from)&&ids.has(l.to)))});
+ svg.querySelectorAll('.nd').forEach(e=>{const x=g.byId[e.dataset.id];e.classList.toggle('hi',ids.has(x.id)||[...x.tunnels].some(t=>ts.has(t)))})}
+function flowWire(d,g){const svg=d.querySelector('.flow-svg'),focus=(ts,ids)=>flowFocus(svg,g,ts,ids);
  svg.querySelectorAll('.nd').forEach(e=>{const x=g.byId[e.dataset.id];
   e.onmouseenter=()=>{const ids=new Set([x.id]);g.links.forEach(l=>{if(l.dashed&&(l.from===x.id||l.to===x.id)){ids.add(l.from);ids.add(l.to)}});focus(x.tunnels,ids)};
   e.onclick=()=>{flowSel={node:x.id};flowSide(d,g)}});
  svg.querySelectorAll('.lk').forEach(e=>{const l=g.links.find(l=>l.key===e.dataset.k);
-  e.onmouseenter=()=>focus(l.tunnels,new Set([l.from,l.to]));e.onclick=()=>{flowSel={link:l.key};flowSide(d,g)}});
+  // On the map, a link that one tunnel alone runs over opens that tunnel.
+  const only=!g.chain&&!l.dashed&&l.tunnels.size===1?[...l.tunnels][0]:undefined;if(only!==undefined)e.classList.add('one');
+  e.onmouseenter=()=>focus(l.tunnels,new Set([l.from,l.to]));e.onclick=()=>{if(only!==undefined){openFlow(only);return}flowSel={link:l.key};flowSide(d,g)}});
  svg.querySelectorAll('.nd,.lk').forEach(e=>e.onmouseleave=()=>svg.classList.remove('focus'))}
 
 function flowSide(d,g){const svg=d.querySelector('.flow-svg');
@@ -120,11 +136,14 @@ function flowSide(d,g){const svg=d.querySelector('.flow-svg');
  const facts=fs=>`<dl>${fs.filter(f=>f[1]!==undefined&&f[1]!=='').map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
  const ts=[...(x?x.tunnels:l.tunnels)].map(id=>g.tunnels[id]);
  const list=g.chain?'':`<h4>${esc(`Tunnels (${ts.length})`)}</h4>`+(ts.length?ts.map(t=>`<div class="ft"><div><b>${esc(t.name)}</b><div class="muted">↑ ${bytes(t.up)} · ↓ ${bytes(t.down)} · ${ago(t.created)}</div></div>
-  <button onclick="openFlow(${js(t.id)})">Details</button></div>`).join(''):'<div class="muted">None</div>');
+  <button>Details</button></div>`).join(''):'<div class="muted">None</div>');
+ // A row of the list lights up its tunnel on the map, and opens it.
  let html;
  if(x)html=`<div class="fs-head nd-ico k-${x.kind}"><svg viewBox="0 0 24 24">${FLOW_ICONS[x.icon||x.kind]||FLOW_ICONS.node}</svg><div><b>${esc(x.label)}</b><div class="muted">${esc(FLOW_KINDS[x.kind]||x.kind)}</div></div></div>
   ${x.note?`<p class="muted">${esc(x.note)}</p>`:''}<h4>Details</h4>${facts(x.facts)}${list}`;
  else{const a=g.byId[l.from],b=g.byId[l.to];
   html=`<div class="fs-head"><div><b>${esc(a.label)} → ${esc(b.label)}</b><div class="muted">${esc(l.dashed?'Control link':'Tunnel')}</div></div></div>
   <h4>Details</h4>${facts([['Protocol',l.label||''],['Tunnels',l.dashed?'':l.tunnels.size],['Up',l.dashed?'':bytes(l.up)],['Down',l.dashed?'':bytes(l.down)]])}${list}`}
- d.querySelector('.flow-side').innerHTML=html}
+ const side=d.querySelector('.flow-side');side.innerHTML=html;
+ side.querySelectorAll('.ft').forEach((e,i)=>{const t=ts[i];
+  e.onmouseenter=()=>flowFocus(svg,g,new Set([t.id]),new Set());e.onmouseleave=()=>svg.classList.remove('focus');e.onclick=()=>openFlow(t.id)})}
