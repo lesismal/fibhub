@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fibhub server</title>
+<link rel="stylesheet" href="/static/base.css">
+</head>
+<body>
+<header><h1>fibhub server <span id="name"></span></h1><span id="meta"></span></header>
+<main>
+<section><h2>Pods</h2><div id="pods"></div></section>
+<section><h2>Clients</h2><div id="clients"></div></section>
+<section><h2>Tunnels</h2><div id="tunnels"></div></section>
+</main>
+<dialog id="editor">
+<h3 id="edTitle">Nodes</h3>
+<table><thead><tr><th>Name</th><th>Address (host:port)</th><th>Description</th><th></th></tr></thead><tbody id="edRows"></tbody></table>
+<p><button onclick="addRow({})">Add node</button></p>
+<p style="text-align:right"><button onclick="editor.close()">Cancel</button> <button class="primary" onclick="saveNodes()">Save to pod</button></p>
+</dialog>
+<div id="msg"></div>
+<script src="/static/base.js"></script>
+<script>
+let state={peers:[],tunnels:[]};
+function render(){
+ const st=state;$('name').textContent=st.name;
+ $('meta').textContent=`v${st.version} · arpc ${st.addr}${st.arpcWs?' · arpc-ws '+st.arpcWs:''}${st.wsAddr?' · web-ws '+st.wsAddr:''}${st.bodyEncrypted?' · bodies encrypted':''} · up ${ago(st.started)}`;
+ const pods=st.peers.filter(p=>p.info.type==='pod'),clients=st.peers.filter(p=>p.info.type==='client');
+ $('pods').innerHTML=table(['ID','Name','Address','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td>
+  <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
+  <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}</div>`).join('')||'<span class="muted">none</span>'}</td>
+  <td>${p.tunnels}</td><td>${ago(p.since)}</td>
+  <td><button onclick="refresh(${p.id})">Query</button><button onclick="edit(${p.id})">Edit nodes</button><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));
+ $('clients').innerHTML=table(['ID','Name','Address','Host','Info','Tunnels','Since',''],clients.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}</td>
+  <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
+  <td>${Object.entries(p.info.meta||{}).map(([k,v])=>`<div class="node">${esc(k)}=${esc(v)}</div>`).join('')}</td>
+  <td>${p.tunnels}</td><td>${ago(p.since)}</td><td><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));
+ $('tunnels').innerHTML=table(['ID','Client','Pod','Node','Address','Up','Down','Age',''],st.tunnels.map(t=>`<tr><td>${t.id}</td><td>${esc(t.client)}</td><td>${esc(t.pod)}</td>
+  <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${bytes(t.up)}</td><td>${bytes(t.down)}</td><td>${ago(t.created)}</td>
+  <td><button class="danger" onclick="closeTunnel('${t.id}')">Close</button></td></tr>`));
+}
+async function load(){try{state=await api('/api/status');render()}catch(e){toast(e.message,true)}}
+async function refresh(id){try{await api(`/api/peers/${id}/refresh`,{});toast('Pod queried');load()}catch(e){toast(e.message,true)}}
+async function kick(id){if(!confirm('Kick this peer?'))return;try{await api(`/api/peers/${id}/kick`,{});toast('Kicked');setTimeout(load,300)}catch(e){toast(e.message,true)}}
+async function closeTunnel(id){try{await api(`/api/tunnels/${id}/close`,{});toast('Tunnel closed');load()}catch(e){toast(e.message,true)}}
+let editing=0;
+function addRow(n){nodeRow($('edRows'),n)}
+function edit(id){const p=state.peers.find(p=>p.id===id);if(!p)return;editing=id;$('edTitle').textContent='Nodes of pod '+p.info.name;$('edRows').innerHTML='';(p.info.nodes||[]).forEach(addRow);if(!(p.info.nodes||[]).length)addRow();editor.showModal()}
+async function saveNodes(){const nodes=readNodes($('edRows'));
+ try{await api(`/api/peers/${editing}/nodes`,nodes);editor.close();toast('Nodes saved on the pod');load()}catch(e){toast(e.message,true)}}
+load();setInterval(()=>{if(!editor.open)load()},3000);
+</script>
+</body>
+</html>

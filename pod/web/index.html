@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fibhub pod</title>
+<link rel="stylesheet" href="/static/base.css">
+</head>
+<body>
+<header><h1>fibhub pod <span id="name"></span></h1><span id="meta"></span></header>
+<main>
+<section><h2>Servers</h2><div id="servers"></div>
+<form class="inline" onsubmit="addServer(event)">
+<input id="sName" placeholder="name (optional)"><input id="sAddr" placeholder="host:7000 or ws://host:7001/fibhub" required><input id="sPass" type="password" placeholder="password" required><input id="sBody" type="password" placeholder="body AES password (optional)">
+<button class="primary">Connect</button></form></section>
+<section><h2>Nodes this pod can reach</h2>
+<table><thead><tr><th>Name</th><th>Address (host:port)</th><th>Description</th><th></th></tr></thead><tbody id="nodes"></tbody></table>
+<form class="inline" onsubmit="event.preventDefault()"><button type="button" onclick="nodeRow($('nodes'));nodesDirty=true">Add node</button><button type="button" onclick="loadNodes()">Revert</button><button type="button" class="primary" onclick="saveNodes()">Save and tell servers</button></form></section>
+<section><h2>Tunnels</h2><div id="tunnels"></div></section>
+</main>
+<div id="msg"></div>
+<script src="/static/base.js"></script>
+<script>
+let state={servers:[],nodes:[],tunnels:[]},nodesDirty=false;
+function render(){
+ const st=state;$('name').textContent=st.name;$('meta').textContent=`v${st.version}${st.saved?'':' · settings not saved (no -config)'}`;
+ $('servers').innerHTML=table(['Name','Address','State','Server','Peer ID','Tunnels',''],st.servers.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.addr)}</td>
+  <td>${stateCell(s)}${s.bodyEncrypted?'<div class="muted">bodies encrypted</div>':''}</td><td>${esc(s.server)}</td><td>${s.peerId||''}</td><td>${s.tunnels}</td>
+  <td><button class="danger" onclick="delServer(${js(s.name)})">Remove</button></td></tr>`));
+ $('tunnels').innerHTML=table(['Server','ID','Client','Node','Address','Local','In','Out','Age',''],st.tunnels.map(t=>`<tr><td>${esc(t.server)}</td><td>${t.id}</td><td>${esc(t.peer)}</td>
+  <td>${esc(t.node)}</td><td>${esc(t.addr)}</td><td>${esc(t.local)}</td><td>${bytes(t.in)}</td><td>${bytes(t.out)}</td><td>${ago(t.created)}</td>
+  <td><button class="danger" onclick="closeTunnel(${js(t.server)},${js(t.id)})">Close</button></td></tr>`));
+}
+function loadNodes(){$('nodes').innerHTML='';state.nodes.forEach(n=>nodeRow($('nodes'),n));nodesDirty=false}
+async function load(first){try{state=await api('/api/status');render();if(first||!nodesDirty)loadNodes()}catch(e){toast(e.message,true)}}
+for(const ev of['input','click'])document.addEventListener(ev,e=>{if(e.target.closest('#nodes'))nodesDirty=true});
+async function saveNodes(){try{await api('/api/nodes',readNodes($('nodes')));nodesDirty=false;toast('Nodes saved');load(true)}catch(e){toast(e.message,true)}}
+async function addServer(e){e.preventDefault();try{await api('/api/servers',{name:$('sName').value.trim(),addr:$('sAddr').value.trim(),password:$('sPass').value,bodyPassword:$('sBody').value});
+ e.target.reset();toast('Server added');setTimeout(load,500)}catch(err){toast(err.message,true)}}
+async function delServer(name){if(!confirm('Disconnect from '+name+'?'))return;try{await api('/api/servers/delete',{name});toast('Removed');load()}catch(e){toast(e.message,true)}}
+async function closeTunnel(server,id){try{await api('/api/tunnels/close',{server,id});toast('Tunnel closed');load()}catch(e){toast(e.message,true)}}
+load(true);setInterval(()=>load(false),3000);
+</script>
+</body>
+</html>

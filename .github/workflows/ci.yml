@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (gofmt / vet / staticcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: |
+          for goos in linux darwin windows; do
+            echo "::group::GOOS=$goos"
+            GOOS=$goos go vet ./...
+            echo "::endgroup::"
+          done
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          "$(go env GOPATH)/bin/staticcheck" ./...
+      - name: go mod tidy
+        run: go mod tidy -diff
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test -race -count=1 -timeout 15m ./...

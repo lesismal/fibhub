@@ -1,0 +1,29 @@
+{
+  "mode": "pod",
+  "name": "pod-1",
+  "webAddr": "127.0.0.1:7180",
+  "webAuth": "admin:CHANGE-ME",
+  "servers": [
+    {
+      "name": "hub",
+      "addr": "hub.example.com:7000",
+      "password": "CHANGE-ME",
+      "bodyPassword": "CHANGE-ME"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "ssh",
+      "addr": "192.168.1.10:22",
+      "desc": "SSH of device 192.168.1.10"
+    },
+    {
+      "name": "web",
+      "addr": "192.168.1.10:80",
+      "desc": "web console of device 192.168.1.10"
+    }
+  ],
+  "meta": {
+    "site": "lab"
+  }
+}

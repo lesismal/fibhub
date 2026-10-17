@@ -1,0 +1,13 @@
+{
+  "mode": "server",
+  "name": "fibhub",
+  "addr": ":7000",
+  "arpcWsAddr": ":7001",
+  "arpcWsPath": "/fibhub",
+  "webAddr": "127.0.0.1:7080",
+  "webAuth": "admin:CHANGE-ME",
+  "wsAddr": "",
+  "wsPassword": "",
+  "password": "CHANGE-ME",
+  "bodyPassword": "CHANGE-ME"
+}

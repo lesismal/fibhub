@@ -1,0 +1,31 @@
+{
+  "mode": "client",
+  "name": "client-1",
+  "webAddr": "127.0.0.1:7280",
+  "webAuth": "",
+  "servers": [
+    {
+      "name": "hub",
+      "addr": "ws://hub.example.com:7001/fibhub",
+      "password": "CHANGE-ME",
+      "bodyPassword": "CHANGE-ME"
+    }
+  ],
+  "forwards": [
+    {
+      "listen": "127.0.0.1:2222",
+      "pod": "pod-1",
+      "node": "ssh"
+    },
+    {
+      "listen": "127.0.0.1:8080",
+      "server": "hub",
+      "pod": "pod-1",
+      "node": "web"
+    }
+  ],
+  "webProxies": [],
+  "meta": {
+    "owner": "ops"
+  }
+}
