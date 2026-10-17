@@ -56,6 +56,23 @@ ssh -p 2222 127.0.0.1
 
 Web 页面：server <http://127.0.0.1:7080>，pod <http://127.0.0.1:7180>，client <http://127.0.0.1:7280>。
 
+### 在一台机器上运行整套部署
+
+[`demo.sh`](demo.sh) 从本仓库构建 fibhub，在 127.0.0.1 上运行多个 server、pod 和 client，每个 pod 和
+client 都连接所有 server（奇数号 server 走 TCP，偶数号走 WebSocket，消息体加密），用于试用或演示 fibhub：
+
+```sh
+./demo.sh --open             # 2 个 server、2 个 pod、2 个 client；打开第一个 client 的页面
+./demo.sh -s 3 -p 4 -c 2     # 其他数量，每种 1-9 个
+./demo.sh status             # 正在运行的实例，以及每个页面及其登录信息
+./demo.sh stop
+```
+
+每个 pod 把自己的 web 页面作为 node `web`、把 `127.0.0.1:22` 作为 node `ssh`，每个 client 为每个 pod 转发
+这两个 node。client 的页面无需登录，能免登录打开每个 server 的页面（经由其 web proxy）和每个 pod 的页面
+（经由 forward，各页面上会出现对应的隧道）。配置、日志和 pid 文件放在 `.demo/`（`DEMO_DIR`）；端口从
+20000 开始（`DEMO_PORT`）。详见 `./demo.sh --help`。
+
 ## 命令行参数
 
 所有参数都是 flag：`fibhub -mode=server|pod|client [flags]`、`fibhub -help`、`fibhub -version`。
@@ -288,6 +305,11 @@ fibhub -mode=client -web= -ws-password=... -webproxy=127.0.0.1:7090=ws://hub.exa
 server 和 pod 页面也会显示本节点 web 页面的地址、用户名和密码，同样带 **Open** 按钮。**Open** 把用户名和
 密码 POST 到该页面的 `/login`，后者返回一个会话 cookie（30 天，用该页面的 `webAuth` 签名），之后无需再
 输入；basic auth 照常可用。
+
+每个页面右上角可以切换**主题和语言**。主题：跟随系统（默认：随系统为浅色或深色）、浅色、深色、吉卜力（纸张
+底色上的夏日蓝天与山丘）或机甲（枪灰色控制台、警示条纹与发光青色）。语言：跟随系统（默认：浏览器语言为中文
+时显示中文，否则显示英文）、English 或中文。选择后一直生效直到再次修改，并保存在 cookie 中，因此对同一主机
+上所有 fibhub 页面生效，与端口无关。
 
 ## 安全说明
 

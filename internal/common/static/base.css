@@ -1,20 +1,76 @@
-:root{--bg:#f6f7f9;--fg:#1d2330;--muted:#6b7385;--card:#fff;--line:#e3e6ec;--accent:#2f6fde;--bad:#c93c3c;--ok:#2b8a4b}
-@media (prefers-color-scheme:dark){:root{--bg:#14171d;--fg:#e4e7ee;--muted:#959cad;--card:#1c2028;--line:#2c313c;--accent:#5b8ff0;--bad:#e06464;--ok:#4cbb72}}
-*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-header{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+/* Themes set these tokens on <html data-theme>: auto (the default: light or dark as the system is),
+   light, dark, ghibli and mecha. Theme-specific decoration follows the shared rules. */
+:root{--bg:#f6f7f9;--fg:#1d2330;--muted:#6b7385;--card:#fff;--line:#e3e6ec;--accent:#2f6fde;--accent-fg:#fff;--bad:#c93c3c;--ok:#2b8a4b;
+ --head:var(--card);--field:var(--bg);--radius:8px;--ctl-radius:5px;--shadow:none;--font:system-ui,sans-serif;--mono:ui-monospace,monospace;color-scheme:light}
+:root[data-theme=dark]{--bg:#14171d;--fg:#e4e7ee;--muted:#959cad;--card:#1c2028;--line:#2c313c;--accent:#5b8ff0;--bad:#e06464;--ok:#4cbb72;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme]),:root[data-theme=auto]{--bg:#14171d;--fg:#e4e7ee;--muted:#959cad;--card:#1c2028;--line:#2c313c;--accent:#5b8ff0;--bad:#e06464;--ok:#4cbb72;color-scheme:dark}}
+:root[data-theme=ghibli]{--bg:#f4edda;--fg:#3a3a2c;--muted:#83795d;--card:#fffaee;--line:#e4d7b5;--accent:#5d8f55;--accent-fg:#fffaee;--bad:#c2573c;--ok:#4c8a3a;
+ --head:linear-gradient(180deg,#8fcbee 0%,#c4e5f7 70%,#e3f2f8 100%);--field:#fffdf6;--radius:16px;--ctl-radius:999px;
+ --shadow:0 2px 0 #e4d7b5,0 10px 26px rgba(93,143,85,.13);--font:"Hiragino Maru Gothic ProN","Yuanti SC","Kosugi Maru",ui-rounded,"Nunito","Trebuchet MS",sans-serif;color-scheme:light}
+:root[data-theme=mecha]{--bg:#090d12;--fg:#d3e2ee;--muted:#6a8195;--card:#0f161e;--line:#1d3647;--accent:#00d5ff;--accent-fg:#001520;--bad:#ff3d55;--ok:#38f59a;--warn:#ffae00;
+ --head:linear-gradient(180deg,#121c26,#0c131a);--field:#070b0f;--radius:0;--ctl-radius:0;--shadow:0 0 0 1px rgba(0,213,255,.06),0 0 22px rgba(0,213,255,.07);
+ --font:"Eurostile","Bank Gothic","DIN Alternate","Rajdhani",ui-monospace,"SF Mono",Menlo,monospace;color-scheme:dark}
+
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 var(--font);background:var(--bg);color:var(--fg)}
+header{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--head);display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;position:relative}
 header h1{font-size:18px;margin:0}header span{color:var(--muted)}
-main{padding:16px 20px;max-width:1200px;margin:0 auto}
-section{background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:16px;overflow:auto}
+header .pref{display:flex;gap:6px;align-items:center;font-size:12px}header .theme{margin-left:auto}
+header .pref select{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:var(--ctl-radius);background:var(--field);color:var(--fg);cursor:pointer}
+main{padding:16px 20px;max-width:1200px;margin:0 auto;position:relative}
+section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;overflow:auto;box-shadow:var(--shadow)}
 section h2{font-size:15px;margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:7px 14px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}tr:last-child td{border-bottom:0}
-button{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:5px;padding:3px 9px;cursor:pointer;margin:1px}
-button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button.danger{color:var(--bad)}
-input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);width:100%}
-.muted{color:var(--muted)}.empty{padding:12px 14px;color:var(--muted)}.node{font-family:ui-monospace,monospace;font-size:12px}
-#msg{position:fixed;right:16px;bottom:16px;padding:8px 14px;border-radius:6px;background:var(--fg);color:var(--bg);display:none}
-dialog{border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);min-width:min(680px,92vw)}
+button{font:inherit;border:1px solid var(--line);background:var(--field);color:var(--fg);border-radius:var(--ctl-radius);padding:3px 9px;cursor:pointer;margin:1px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}button.danger{color:var(--bad)}
+input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:min(var(--ctl-radius),6px);background:var(--field);color:var(--fg);width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.muted{color:var(--muted)}.empty{padding:12px 14px;color:var(--muted)}.node{font-family:var(--mono);font-size:12px}
+#msg{position:fixed;right:16px;bottom:16px;padding:8px 14px;border-radius:min(var(--radius),8px);background:var(--fg);color:var(--bg);display:none;z-index:10}
+dialog{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);color:var(--fg);min-width:min(680px,92vw);box-shadow:var(--shadow)}
 dialog table td{padding:4px}
 form.inline{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}form.inline input{width:auto;flex:1 1 140px}
 .state-registered{color:var(--ok)}.state-failed{color:var(--bad)}.state-connecting{color:var(--muted)}
-.secret{font-family:ui-monospace,monospace;font-size:12px;margin-right:4px}button.eye{font-size:12px;padding:1px 7px}
+.secret{font-family:var(--mono);font-size:12px;margin-right:4px}button.eye{font-size:12px;padding:1px 7px}
+.swap{display:inline-grid;justify-items:start}button.swap{justify-items:center}.swap>span{grid-area:1/1}
+.swap>span+span,.swap.on>span:first-child{visibility:hidden}.swap.on>span+span{visibility:visible}
+
+/* Ghibli: a summer sky with clouds over a paper page, rolling hills at the bottom. */
+[data-theme=ghibli] body{background:linear-gradient(180deg,#e3f2f8 0,var(--bg) 260px) no-repeat,var(--bg)}
+[data-theme=ghibli] header{border-bottom:0;padding-bottom:30px;
+ background:radial-gradient(ellipse 70px 22px at 78% 34%,#fff 60%,transparent 62%),radial-gradient(ellipse 46px 18px at 84% 26%,#fff 60%,transparent 62%),
+ radial-gradient(ellipse 90px 20px at 30% 70%,rgba(255,255,255,.85) 60%,transparent 62%),radial-gradient(ellipse 50px 16px at 36% 60%,rgba(255,255,255,.85) 60%,transparent 62%),var(--head)}
+[data-theme=ghibli] header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:26px;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 26' preserveAspectRatio='none'%3E%3Cpath d='M0 26V14C40 2 80 4 120 12S200 24 250 12 340 0 400 10V26Z' fill='%2397c47e'/%3E%3Cpath d='M0 26V20C60 10 110 12 170 19S280 26 330 17 380 14 400 16V26Z' fill='%23f4edda'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+[data-theme=ghibli] header h1{color:#2f5a35;letter-spacing:.02em}[data-theme=ghibli] header h1 span{color:#3f6f8f}[data-theme=ghibli] header>span{color:#3f6f8f}
+[data-theme=ghibli] header .pref{color:#2f5a35}
+[data-theme=ghibli] section{border-width:1.5px}
+[data-theme=ghibli] section h2{color:#2f5a35;border-bottom-style:dashed}[data-theme=ghibli] section h2::before{content:"🍃 "}
+[data-theme=ghibli] tbody tr:hover{background:#f8f1dd}
+[data-theme=ghibli] button{padding:3px 12px}[data-theme=ghibli] button.primary{box-shadow:0 2px 0 #3f6d3a}
+[data-theme=ghibli] button.primary:active{transform:translateY(1px);box-shadow:0 1px 0 #3f6d3a}
+[data-theme=ghibli] body::after{content:"";position:fixed;left:0;right:0;bottom:0;height:70px;pointer-events:none;z-index:-1;opacity:.55;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 70' preserveAspectRatio='none'%3E%3Cpath d='M0 70V40C50 18 110 22 160 36S260 60 310 38 380 24 400 30V70Z' fill='%23b9d89a'/%3E%3Cpath d='M0 70V54C70 40 130 44 200 52S320 64 400 48V70Z' fill='%2397c47e'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+[data-theme=ghibli] main{padding-bottom:70px}
+
+/* Mecha: a gunmetal console on a blueprint grid, hazard stripes, cut corners and glowing cyan. */
+[data-theme=mecha] body{background:radial-gradient(ellipse at 50% 0,rgba(0,213,255,.08),transparent 60%),
+ linear-gradient(rgba(0,213,255,.045) 1px,transparent 1px) 0 0/32px 32px,linear-gradient(90deg,rgba(0,213,255,.045) 1px,transparent 1px) 0 0/32px 32px,var(--bg)}
+[data-theme=mecha] body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:20;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
+[data-theme=mecha] header{border-bottom:0;padding-bottom:20px;text-transform:uppercase;letter-spacing:.12em}
+[data-theme=mecha] header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:repeating-linear-gradient(-45deg,var(--warn) 0 10px,#111 10px 20px)}
+[data-theme=mecha] header h1{color:var(--accent);text-shadow:0 0 10px rgba(0,213,255,.55)}[data-theme=mecha] header h1 span{color:var(--warn);text-shadow:none}
+[data-theme=mecha] header>span{font-size:12px}
+[data-theme=mecha] section{border-color:var(--line);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));
+ background:linear-gradient(225deg,var(--accent) 0 14px,transparent 14px) no-repeat,linear-gradient(45deg,var(--warn) 0 14px,transparent 14px) no-repeat,var(--card)}
+[data-theme=mecha] section h2{text-transform:uppercase;letter-spacing:.14em;font-size:13px;color:var(--accent);border-left:3px solid var(--warn);background:linear-gradient(90deg,rgba(0,213,255,.1),transparent 60%)}
+[data-theme=mecha] section h2::before{content:"▮▮ ";color:var(--warn);font-size:10px;vertical-align:1px}
+[data-theme=mecha] th{color:var(--warn);letter-spacing:.1em}
+[data-theme=mecha] td{font-family:var(--mono);font-size:13px}
+[data-theme=mecha] tbody tr:hover{background:rgba(0,213,255,.06)}
+[data-theme=mecha] button{text-transform:uppercase;letter-spacing:.08em;font-size:12px;background:transparent;border-color:rgba(0,213,255,.45);color:var(--accent)}
+[data-theme=mecha] button:hover{box-shadow:0 0 10px rgba(0,213,255,.5)}
+[data-theme=mecha] button.primary{background:var(--accent);color:var(--accent-fg);font-weight:700}
+[data-theme=mecha] button.danger{color:var(--bad);border-color:rgba(255,61,85,.5)}[data-theme=mecha] button.danger:hover{box-shadow:0 0 10px rgba(255,61,85,.5)}
+[data-theme=mecha] .state-registered{text-shadow:0 0 8px rgba(56,245,154,.6)}[data-theme=mecha] .state-failed{text-shadow:0 0 8px rgba(255,61,85,.6)}
+[data-theme=mecha] #msg{background:var(--accent);color:var(--accent-fg);font-weight:700;letter-spacing:.06em}
+[data-theme=mecha] dialog{border-color:var(--accent)}[data-theme=mecha] dialog::backdrop{background:rgba(0,10,16,.7)}

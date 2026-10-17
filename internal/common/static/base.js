@@ -11,9 +11,10 @@ function readNodes(tbody){return [...tbody.querySelectorAll('tr')].map(tr=>{cons
 function stateCell(s){return `<span class="state-${esc(s.state)}">${esc(s.state)}</span>${s.error?`<div class="muted">${esc(s.error)}</div>`:''}`}
 const js=v=>esc(JSON.stringify(v));
 // A secret shows as dots until its Show button is pressed; shown keeps which
-// ones are shown across renders.
+// ones are shown across renders. The value and the dots, and Show and Hide,
+// take the same space, the wider one's, so the table stays put on a toggle.
 const shown=new Set();
-function secret(key,v){const on=shown.has(key);return `<span class="secret">${on?esc(v):'••••••••'}</span><button class="eye" onclick="toggleSecret(${js(key)})">${on?'Hide':'Show'}</button>`}
+function secret(key,v){const on=shown.has(key)?' on':'';return `<span class="secret swap${on}"><span>••••••••</span><span>${esc(v)}</span></span><button class="eye swap${on}" onclick="toggleSecret(${js(key)})"><span>Show</span><span>Hide</span></button>`}
 function toggleSecret(key){shown.has(key)?shown.delete(key):shown.add(key);render()}
 // pageURL is the http URL of a listen address; one on every address is
 // reached at the host this page came from.

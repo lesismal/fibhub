@@ -57,6 +57,25 @@ ssh -p 2222 127.0.0.1
 
 Web pages: server <http://127.0.0.1:7080>, pod <http://127.0.0.1:7180>, client <http://127.0.0.1:7280>.
 
+### A whole deployment on one machine
+
+[`demo.sh`](demo.sh) builds fibhub from the checkout and runs several servers, pods and clients on
+127.0.0.1, each pod and client connected to every server (odd-numbered servers over TCP, even-numbered
+over WebSocket, bodies encrypted), for trying fibhub out or showing it:
+
+```sh
+./demo.sh --open             # 2 servers, 2 pods, 2 clients; opens the first client's page
+./demo.sh -s 3 -p 4 -c 2     # other counts, 1-9 each
+./demo.sh status             # what runs, and every page with its login
+./demo.sh stop
+```
+
+Every pod offers its own web page as node `web` and `127.0.0.1:22` as node `ssh`, and every client
+forwards both for every pod. A client's page needs no login and opens every server's page (through its
+web proxy) and every pod's page (through a forward, which shows up as tunnels) logged in. Configs, logs
+and pids go to `.demo/` (`DEMO_DIR`); ports start at 20000 (`DEMO_PORT`). `./demo.sh --help` has the
+details.
+
 ## Command line
 
 Everything is a flag: `fibhub -mode=server|pod|client [flags]`, `fibhub -help`, `fibhub -version`.
@@ -301,6 +320,12 @@ password; a wrong password gets nothing.
 The server and pod pages also show their own address, user and password, with the same **Open**.
 **Open** posts the user and password to the page's `/login`, which answers with a session cookie (30
 days, signed with the page's `webAuth`), so the page asks for nothing; basic auth works as before.
+
+**Theme and language**, at the top right of every page. Theme: System (the default: light or dark as
+the system is), Light, Dark, Ghibli (a summer sky over paper and hills) or Mecha (a gunmetal console with
+hazard stripes and glowing cyan). Language: System (the default: Chinese if the browser's language is
+Chinese, else English), English or 中文. A pick holds until changed, and is kept in a cookie, so it
+applies to every fibhub page on the same host, whatever its port.
 
 ## Security
 
