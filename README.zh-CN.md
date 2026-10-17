@@ -130,7 +130,7 @@ pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启�
 ### 生成整套部署的配置
 
 [`configs/gen-configs.sh`](configs/gen-configs.sh) 一次生成整套部署（所有 server、pod、client）的配置
-文件，密码随机生成且彼此匹配：
+文件，各文件中的密码彼此匹配：
 
 1. 在 [`configs/config.sh`](configs/config.sh) 中列出各实例。文件里对每个列表都有说明和示例：
 
@@ -151,7 +151,7 @@ pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启�
    | `NODES`、`NODE_ADDRS` | `ssh` 127.0.0.1:22、`web` 127.0.0.1:{web} | 每个 pod 提供的 node；`{web}` 为 pod 自己的 web 端口 |
    | `FORWARD_NODES` | `ssh web` | 每个 client 为每个 pod 转发的 node |
    | `WEB_USER` | `admin` | 所有 web 页面登录的用户名 |
-   | `PASSWORD_LEN` | `24` | 随机密码长度 |
+   | `PASSWORD_LEN` | `24` | 密码长度 |
    | `*_PORT`、`CLIENT_PORTS` | 见下文 | 端口 |
 
 3. 运行脚本；文件写到 `configs/gen/`（已被 git 忽略），或写到参数给出的目录：
@@ -160,6 +160,11 @@ pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启�
    ./configs/gen-configs.sh            # configs/gen/server-hub-1.json、pod-lab.json、client-alice-laptop.json……
    ./configs/gen-configs.sh /tmp/out
    ```
+
+   脚本会先要求输入**密钥种子**（输入两次），并由它派生所有密码。每个密码字段（server 的 `password`、
+   `bodyPassword`、`wsPassword` 和 `webAuth`，pod 或 client 的 `webAuth`）各有不同的值，同一个种子每次
+   运行都得到相同的值。留空则取随机种子。没有终端时从 stdin 的第一行读取种子
+   （`printf '%s\n' "$SEED" | ./configs/gen-configs.sh`，或用 `</dev/null` 取随机种子）。
 
 4. 把每个文件拷到对应主机上启动，例如用 [`restart.sh`](restart.sh)：它会停掉该模式正在运行的进程，用该
    文件启动 `fibhub`（默认是脚本旁边的二进制），日志写到把 `.json` 换成 `.log` 的文件：
@@ -179,7 +184,8 @@ pod 和 client 在 Web 页面上修改设置后会**写回配置文件**（启�
 
 注意事项：
 
-- 每次运行都会为所有文件生成**新密码**：整套文件要一起部署。
+- 同一个种子每次运行得到相同的密码，所以在 `config.sh` 中新增实例不会改变其他文件。随机种子会为所有
+  文件生成**新密码**：整套文件要一起部署。拿到种子就拿到了所有密码：请用足够长的种子，并像密码一样保管。
 - 同一模式的实例使用相同端口，因此各自运行在不同主机上；`restart.sh` 也会先停掉该模式所有正在运行的进程。
   含多个 `127.0.0.1` 条目的列表只是模板：部署前替换地址，或手动修改同一主机上实例的端口。
 - 一个 client 需要 `server 数 + pod 数 × FORWARD_NODES 数` 个端口；超出 `CLIENT_PORTS` 的部分会被跳过并

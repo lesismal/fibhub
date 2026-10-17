@@ -16,14 +16,16 @@
 #
 #   server-<name>.json   pod-<name>.json   client-<name>.json
 #
-# with fresh random passwords on every run, so a run replaces every file and
-# all of them must be deployed together. Every pod and every client gets all
+# with every password derived from the key seed it asks for: the same seed
+# gives the same passwords on every run, and an empty one takes a random
+# seed, so the run's files must be deployed together. Every pod and every
+# client gets all
 # the servers listed here, each with that server's own passwords; every
 # client gets a web proxy for each server's web page and forwards to the
 # nodes of every pod (gen-configs.sh says which nodes and ports).
 #
-# 每次运行都会生成新的随机密码，所以每次运行都会替换所有文件，这些文件必须一起
-# 部署。每个 pod 和每个 client 都会得到这里列出的所有 server，各自带有该 server
+# 所有密码都由它要求输入的密钥种子派生：同一个种子每次运行得到相同的密码，留空
+# 则取随机种子，此时这次运行生成的文件必须一起部署。每个 pod 和每个 client 都会得到这里列出的所有 server，各自带有该 server
 # 自己的密码；每个 client 会为每个 server 的 web 页面得到一个 web proxy，并为
 # 每个 pod 的 node 得到 forward（具体哪些 node、哪些端口见 gen-configs.sh）。
 #

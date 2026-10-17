@@ -1,15 +1,33 @@
 #!/usr/bin/env bash
 # gen-configs.sh writes a set of fibhub config files for the servers, pods
-# and clients that config.sh, next to it, names. Every password is random;
-# each pod and client lists every server with that server's own password
-# and bodyPassword.
+# and clients that config.sh, next to it, names. Each pod and client lists
+# every server with that server's own password and bodyPassword.
 #
 # gen-configs.sh 为旁边 config.sh 中列出的 server、pod 和 client 生成一套
-# fibhub 配置文件。所有密码都是随机的；每个 pod 和 client 都列出所有 server，
-# 各自带有该 server 自己的 password 和 bodyPassword。
+# fibhub 配置文件。每个 pod 和 client 都列出所有 server，各自带有该 server
+# 自己的 password 和 bodyPassword。
 #
 #   ./configs/gen-configs.sh [out-dir]     # out-dir defaults to configs/gen
 #                                          # out-dir 默认为 configs/gen
+#
+# It first asks for a key seed, and derives every password from it: each
+# password field (a server's password, bodyPassword, wsPassword and webAuth,
+# a pod's or a client's webAuth) gets its own value, and the same seed gives
+# the same values on every run, so configs can be regenerated without
+# redeploying them all. An empty seed takes a random one, which gives new
+# passwords on every run. Anyone with the seed has every password, so use a
+# long one and keep it like a password. Without a terminal the seed is read
+# from the first line of stdin:
+#
+# 它先要求输入密钥种子，并由种子派生所有密码：每个密码字段（server 的
+# password、bodyPassword、wsPassword 和 webAuth，pod 或 client 的 webAuth）各
+# 有不同的值，同一个种子每次运行都得到相同的值，因此可以重新生成配置而不必全部
+# 重新部署。种子为空时取一个随机种子，每次运行得到新密码。拿到种子就拿到了所有
+# 密码，所以请用足够长的种子，并像密码一样保管。没有终端时，从 stdin 的第一行读
+# 取种子：
+#
+#   ./configs/gen-configs.sh </dev/null              # random seed / 随机种子
+#   printf '%s\n' "$SEED" | ./configs/gen-configs.sh  # given seed / 指定种子
 #
 # Ports (instances of one mode run on different hosts, so each uses the same
 # ports):
@@ -79,8 +97,8 @@ FORWARD_NODES=("ssh" "web")
 # 所有 web 页面 basic auth 的用户名。
 WEB_USER="admin"
 
-# Length of the random passwords.
-# 随机密码的长度。
+# Length of the passwords.
+# 密码的长度。
 PASSWORD_LEN=24
 
 SERVER_ADDR_PORT=10000
@@ -96,10 +114,46 @@ CLIENT_PORTS=(10012 10013 10014 10015)
 
 out_dir=${1:-"$(cd "$(dirname "$0")" && pwd)/gen"}
 
-# rand prints a random alphanumeric password.
-# rand 输出一个由字母和数字组成的随机密码。
+# rand prints $1 random letters and digits.
+# rand 输出 $1 个随机的字母和数字。
 rand() {
-	LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$PASSWORD_LEN"
+	LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$1"
+}
+
+# sha256 prints the hex SHA-256 of stdin.
+# sha256 输出 stdin 的十六进制 SHA-256。
+if command -v sha256sum >/dev/null; then
+	sha256() { sha256sum | cut -d' ' -f1; }
+elif command -v shasum >/dev/null; then
+	sha256() { shasum -a 256 | cut -d' ' -f1; }
+elif command -v openssl >/dev/null; then
+	sha256() { openssl dgst -sha256 -r | cut -d' ' -f1; }
+else
+	die "found none of sha256sum, shasum and openssl"
+fi
+
+# key prints the password of the field $1, a label such as
+# "server/hub-1/password", derived from seed: the hashes of seed, the label
+# and a counter, as letters and digits.
+# key 输出字段 $1（形如 "server/hub-1/password" 的标签）的密码，由 seed 派生：
+# 对 seed、标签和计数器求哈希，转成字母和数字。
+ALNUM="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+key() {
+	local out="" i=0 j b h
+	while ((${#out} < PASSWORD_LEN)); do
+		h=$(printf 'fibhub-gen-configs\n%d\n%s\n%s\n%d' "${#seed}" "$seed" "$1" "$i" | sha256)
+		for ((j = 0; j < 64 && ${#out} < PASSWORD_LEN; j += 2)); do
+			b=$((16#${h:j:2}))
+			# 248 is 4*62: dropping the bytes from it up keeps every character
+			# equally likely.
+			# 248 = 4*62：丢弃不小于它的字节，使每个字符出现的概率相同。
+			if ((b < 248)); then
+				out+=${ALNUM:b%62:1}
+			fi
+		done
+		i=$((i + 1))
+	done
+	printf '%s' "$out"
 }
 
 # check_names fails unless every argument is a usable, distinct name.
@@ -129,19 +183,41 @@ check_names client "${CLIENTS[@]}"
 ((${#NODES[@]} == ${#NODE_ADDRS[@]})) || die "NODES and NODE_ADDRS differ in length"
 [[ $UPLINK == ws || $UPLINK == tcp ]] || die "UPLINK must be ws or tcp"
 
+# The key seed: typed twice on a terminal, else the first line of stdin;
+# empty takes a random one.
+# 密钥种子：在终端上输入两次，否则取 stdin 的第一行；为空则取随机种子。
+seed=""
+if [[ -t 0 ]]; then
+	IFS= read -r -s -p "key seed (empty for random) / 密钥种子（留空则随机）: " seed || true
+	echo >&2
+	if [[ -n $seed ]]; then
+		IFS= read -r -s -p "again / 再输入一次: " again || true
+		echo >&2
+		[[ $seed == "$again" ]] || die "the two seeds differ / 两次输入的种子不一致"
+	fi
+else
+	IFS= read -r seed || true
+fi
+if [[ -n $seed ]]; then
+	echo "gen-configs: passwords derived from the given seed / 密码由输入的种子派生" >&2
+else
+	seed=$(rand 43)
+	echo "gen-configs: passwords derived from a random seed / 密码由随机种子派生" >&2
+fi
+
 # The servers' secrets, which the pods and clients share, and the web pages'
 # logins, which the clients know.
 # server 的密钥（pod 和 client 共享）以及各 web 页面的登录信息（client 知道）。
 server_pw=() server_body_pw=() server_ws_pw=() server_web_auth=()
-for i in "${!server_names[@]}"; do
-	server_pw+=("$(rand)")
-	server_body_pw+=("$(rand)")
-	server_ws_pw+=("$(rand)")
-	server_web_auth+=("$WEB_USER:$(rand)")
+for name in "${server_names[@]}"; do
+	server_pw+=("$(key "server/$name/password")")
+	server_body_pw+=("$(key "server/$name/bodyPassword")")
+	server_ws_pw+=("$(key "server/$name/wsPassword")")
+	server_web_auth+=("$WEB_USER:$(key "server/$name/webAuth")")
 done
 pod_web_auth=()
 for pod in "${PODS[@]}"; do
-	pod_web_auth+=("$WEB_USER:$(rand)")
+	pod_web_auth+=("$WEB_USER:$(key "pod/$pod/webAuth")")
 done
 
 # node_is_web succeeds if the node named $1 is the pod's own web page.
@@ -227,7 +303,7 @@ for client in "${CLIENTS[@]}"; do
   "mode": "client",
   "name": "$client",
   "webAddr": "127.0.0.1:$CLIENT_WEB_PORT",
-  "webAuth": "$WEB_USER:$(rand)",
+  "webAuth": "$WEB_USER:$(key "client/$client/webAuth")",
 EOF
 		servers_json
 		echo '  "webProxies": ['

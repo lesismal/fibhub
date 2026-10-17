@@ -135,7 +135,7 @@ since it holds passwords. A server only reads its file.
 ### Generating a deployment's configs
 
 [`configs/gen-configs.sh`](configs/gen-configs.sh) writes matching config files for a whole deployment
-at once (every server, pod and client), with random passwords that agree with each other:
+at once (every server, pod and client), with passwords that agree with each other:
 
 1. List the instances in [`configs/config.sh`](configs/config.sh). The file explains each list and
    has examples:
@@ -157,7 +157,7 @@ at once (every server, pod and client), with random passwords that agree with ea
    | `NODES`, `NODE_ADDRS` | `ssh` 127.0.0.1:22, `web` 127.0.0.1:{web} | nodes every pod offers; `{web}` is the pod's own web port |
    | `FORWARD_NODES` | `ssh web` | nodes every client forwards, for every pod |
    | `WEB_USER` | `admin` | user of every web page's login |
-   | `PASSWORD_LEN` | `24` | length of the random passwords |
+   | `PASSWORD_LEN` | `24` | length of the passwords |
    | `*_PORT`, `CLIENT_PORTS` | see below | ports |
 
 3. Run it; the files go to `configs/gen/` (ignored by git), or to the directory given:
@@ -166,6 +166,12 @@ at once (every server, pod and client), with random passwords that agree with ea
    ./configs/gen-configs.sh            # configs/gen/server-hub-1.json, pod-lab.json, client-alice-laptop.json, ...
    ./configs/gen-configs.sh /tmp/out
    ```
+
+   It first asks for a **key seed** (twice) and derives every password from it. Each password field
+   (a server's `password`, `bodyPassword`, `wsPassword` and `webAuth`, a pod's or client's `webAuth`)
+   gets its own value, and the same seed gives the same values on every run. Leave it empty for a
+   random seed. Without a terminal it reads the seed from the first line of stdin
+   (`printf '%s\n' "$SEED" | ./configs/gen-configs.sh`, or `</dev/null` for a random one).
 
 4. Copy each file to its host and start it, e.g. with [`restart.sh`](restart.sh), which stops the
    running process of that mode, starts `fibhub` (by default the binary next to the script) with the
@@ -187,7 +193,9 @@ What each instance gets:
 
 Things to know:
 
-- Every run makes **new passwords** for every file: deploy the whole set together.
+- With the same seed a run gives the same passwords, so adding an instance to `config.sh` leaves the
+  other files as they were. A random seed makes **new passwords** for every file: deploy the whole set
+  together. Anyone with the seed has every password: use a long one and keep it like a password.
 - Instances of one mode share ports, so each runs on its own host; `restart.sh` also stops every
   running process of that mode first. Lists with several `127.0.0.1` entries are templates: replace the
   addresses, or change the ports of those sharing a host by hand.
