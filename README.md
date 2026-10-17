@@ -96,7 +96,7 @@ Everything is a flag: `fibhub -mode=server|pod|client [flags]`, `fibhub -help`, 
 | `-ws` | server | address of the encrypted WebSocket carrying the web page |
 | `-ws-password` | server, client | password of that WebSocket; default `-password` |
 | `-server` | pod, client | server to connect to, `[name=]host:port` or `ws://host:port/fibhub`; repeatable |
-| `-pool` | pod, client | arpc connections to each `-server` server, default 10; each tunnel stays on one of them, so its data keeps its order |
+| `-pool` | pod, client | arpc connections to each `-server` server, default 10, each of which registers; each tunnel stays on one of them, so its data keeps its order. Pods or clients of the same name, even from several processes, are one peer to the server, which numbers their connections from 0 and gives a closed connection's number to the next to register, as Unix does file descriptors |
 | `-meta` | pod, client | `key=value` told to the servers; repeatable |
 | `-node` | pod | node the pod may reach, `name=host:port[,description]`; repeatable |
 | `-forward` | client | `listen=pod/node[@server]`, e.g. `127.0.0.1:2222=lab/ssh`; repeatable. Without `@server` the tunnels are spread over every server that has the pod (see [Latency and load balancing](#latency-and-load-balancing)) |

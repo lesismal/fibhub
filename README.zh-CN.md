@@ -93,7 +93,7 @@ client 都连接所有 server（奇数号 server 走 TCP，偶数号走 WebSocke
 | `-ws` | server | 承载 Web 页面的加密 WebSocket 地址 |
 | `-ws-password` | server、client | 该 WebSocket 的密码，默认同 `-password` |
 | `-server` | pod、client | 要连接的 server，`[name=]host:port` 或 `ws://host:port/fibhub`；可重复 |
-| `-pool` | pod、client | 到每个 `-server` 的 arpc 连接数，默认 10；每条隧道固定走其中一条，保证数据顺序 |
+| `-pool` | pod、client | 到每个 `-server` 的 arpc 连接数，默认 10，每条连接都单独注册；每条隧道固定走其中一条，保证数据顺序。同名的 pod 或 client（即使来自多个进程）在 server 上显示为一个，连接从 0 开始编号，掉线连接的编号会像 Unix fd 一样由新注册的连接从小到大复用 |
 | `-meta` | pod、client | 告诉 server 的 `key=value`；可重复 |
 | `-node` | pod | pod 可连接的 node，`name=host:port[,描述]`；可重复 |
 | `-forward` | client | `listen=pod/node[@server]`，如 `127.0.0.1:2222=lab/ssh`；可重复。不带 `@server` 时，隧道分散到所有拥有该 pod 的 server 上（见[延迟与负载均衡](#延迟与负载均衡)） |

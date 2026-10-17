@@ -33,12 +33,12 @@ function render(){
  $('web').innerHTML=st.web&&st.web.addr?pageLine('web',st.web.addr,st.web.auth):'';
  $('meta').textContent=`v${st.version} · arpc ${st.addr}${st.arpcWs?' · arpc-ws '+st.arpcWs:''}${st.wsAddr?' · web-ws '+st.wsAddr:''}${st.bodyEncrypted?' · bodies encrypted':''} · up ${ago(st.started)}`;
  const pods=st.peers.filter(p=>p.info.type==='pod'),clients=st.peers.filter(p=>p.info.type==='client');
- $('pods').innerHTML=table(['ID','Name','Address','Latency','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}<div class="muted">${p.conns} conns</div></td><td>${rtt(p.rtt)}</td>
+ $('pods').innerHTML=table(['ID','Name','Address','Latency','Host','Nodes','Tunnels','Since',''],pods.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}<div class="muted" title="${esc((p.places||[]).map(i=>'#'+i).join(' '))}">${p.conns} conns</div></td><td>${rtt(p.rtt)}</td>
   <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
   <td>${(p.info.nodes||[]).map(n=>`<div class="node">${esc(n.name)} → ${esc(n.addr)}${n.desc?` <span class="muted">${esc(n.desc)}</span>`:''}${nodeRTT(p,n.name)?' · '+rtt(nodeRTT(p,n.name)):''}</div>`).join('')||'<span class="muted">none</span>'}</td>
   <td>${p.tunnels}</td><td>${ago(p.since)}</td>
   <td><button onclick="refresh(${p.id})">Query</button><button onclick="edit(${p.id})">Edit nodes</button><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));
- $('clients').innerHTML=table(['ID','Name','Address','Latency','Host','Info','Tunnels','Since',''],clients.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}<div class="muted">${p.conns} conns</div></td><td>${rtt(p.rtt)}</td>
+ $('clients').innerHTML=table(['ID','Name','Address','Latency','Host','Info','Tunnels','Since',''],clients.map(p=>`<tr><td>${p.id}</td><td>${esc(p.info.name)}</td><td>${esc(p.addr)}<div class="muted" title="${esc((p.places||[]).map(i=>'#'+i).join(' '))}">${p.conns} conns</div></td><td>${rtt(p.rtt)}</td>
   <td>${esc(p.info.hostname)}<div class="muted">${esc(p.info.os)} ${esc(p.info.version)}</div></td>
   <td>${Object.entries(p.info.meta||{}).map(([k,v])=>`<div class="node">${esc(k)}=${esc(v)}</div>`).join('')}</td>
   <td>${p.tunnels}</td><td>${ago(p.since)}</td><td><button class="danger" onclick="kick(${p.id})">Kick</button></td></tr>`));

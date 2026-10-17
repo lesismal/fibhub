@@ -726,39 +726,60 @@ func TestBalance(t *testing.T) {
 	}
 }
 
-// TestPool checks that pods and clients connect to a server with a pool of
-// connections, that tunnels spread over the pool's connections, each on one
-// of them, and that a pool connection that closes takes only its own
-// tunnels with it.
-func TestPool(t *testing.T) {
-	h := startHub(t, []proto.Node{{Name: "echo", Addr: echoNode(t, "")}}, []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}, hubOpts{})
-	waitFor(t, "the pools to join", func() bool {
-		if h.pod.Uplinks()[0].Status().Pool != uplink.DefaultPoolSize || h.client.Uplinks()[0].Status().Pool != uplink.DefaultPoolSize {
+// echo has c's tunnel echo msg.
+func echo(c net.Conn, msg string) error {
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err := io.WriteString(c, msg); err != nil {
+		return err
+	}
+	buf := make([]byte, len(msg))
+	if _, err := io.ReadFull(c, buf); err != nil {
+		return err
+	}
+	if string(buf) != msg {
+		return fmt.Errorf("echoed %q", buf)
+	}
+	return nil
+}
+
+// peerView is the server's view of the peer of type typ named name.
+func peerView(s *server.Server, typ, name string) (server.PeerView, bool) {
+	for _, p := range s.Status().Peers {
+		if p.Info.Type == typ && p.Info.Name == name {
+			return p, true
+		}
+	}
+	return server.PeerView{}, false
+}
+
+// places reports whether a peer's connections hold places 0 to n-1.
+func places(got []int, n int) bool {
+	if len(got) != n {
+		return false
+	}
+	for i, p := range got {
+		if p != i {
 			return false
 		}
-		for _, p := range h.server.Status().Peers {
-			if p.Conns != uplink.DefaultPoolSize {
-				return false
-			}
-		}
-		return true
+	}
+	return true
+}
+
+// TestPool checks that every connection of the pools of pods and clients
+// registers, that tunnels spread over the pools' connections, each on one
+// of them, and that a connection that closes takes only its own tunnels
+// with it, and gives its place to the next connection to register.
+func TestPool(t *testing.T) {
+	const size = uplink.DefaultPoolSize
+	h := startHub(t, []proto.Node{{Name: "echo", Addr: echoNode(t, "")}}, []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}, hubOpts{})
+	waitFor(t, "the pools to register", func() bool {
+		pv, _ := peerView(h.server, proto.TypePod, "lab")
+		cv, _ := peerView(h.server, proto.TypeClient, "me")
+		return h.pod.Uplinks()[0].Status().Pool == size && h.client.Uplinks()[0].Status().Pool == size &&
+			places(pv.Places, size) && places(cv.Places, size)
 	})
 	addr := h.forwardAddr(t, "127.0.0.1:0")
-	echo := func(c net.Conn, msg string) error {
-		c.SetDeadline(time.Now().Add(10 * time.Second))
-		if _, err := io.WriteString(c, msg); err != nil {
-			return err
-		}
-		buf := make([]byte, len(msg))
-		if _, err := io.ReadFull(c, buf); err != nil {
-			return err
-		}
-		if string(buf) != msg {
-			return fmt.Errorf("echoed %q", buf)
-		}
-		return nil
-	}
-	const n = 2 * uplink.DefaultPoolSize
+	const n = 2 * size
 	conns := make([]net.Conn, n)
 	for i := range conns {
 		c, err := net.Dial("tcp", addr)
@@ -777,28 +798,22 @@ func TestPool(t *testing.T) {
 		clientLinks[r.ClientLink]++
 		podLinks[r.PodLink]++
 	}
-	if len(routes) != n || len(clientLinks) != uplink.DefaultPoolSize || len(podLinks) != uplink.DefaultPoolSize {
+	if len(routes) != n || len(clientLinks) != size || len(podLinks) != size {
 		t.Fatalf("%d tunnels over %d client and %d pod connections", len(routes), len(clientLinks), len(podLinks))
 	}
 
-	// Close a connection of the client's pool other than the one it
-	// registered on, at the server.
-	var me *server.Peer
-	for _, p := range h.server.Peers() {
-		if p.Info().Name == "me" {
-			me = p
-		}
-	}
-	var killed *server.Route
+	// Close a connection of the client's pool and one of the pod's, at the
+	// server, which carry other tunnels.
+	clientKilled, podKilled := routes[0].ClientLink, routes[0].PodLink
 	for _, r := range routes {
-		if r.ClientLink != me.Client {
-			killed = r
+		if r.PodLink != podKilled && r.ClientLink != clientKilled {
+			podKilled = r.PodLink
 			break
 		}
 	}
 	gone := map[uint64]bool{}
 	for _, r := range routes {
-		if r.ClientLink == killed.ClientLink {
+		if r.ClientLink == clientKilled || r.PodLink == podKilled {
 			gone[r.ID] = true
 		}
 	}
@@ -806,7 +821,8 @@ func TestPool(t *testing.T) {
 	for _, tv := range h.client.Tunnels() {
 		byLocal[tv.Remote] = tv.ID
 	}
-	killed.ClientLink.Conn().Close()
+	clientKilled.Conn().Close()
+	podKilled.Conn().Close()
 	for i, c := range conns {
 		id, ok := byLocal[c.LocalAddr().String()]
 		if !ok {
@@ -814,11 +830,13 @@ func TestPool(t *testing.T) {
 		}
 		err := echo(c, "again")
 		if gone[id] != (err != nil) {
-			t.Fatalf("tunnel %d (%d), on the closed connection: %v, echo: %v", id, i, gone[id], err)
+			t.Fatalf("tunnel %d (%d), on a closed connection: %v, echo: %v", id, i, gone[id], err)
 		}
 	}
-	waitFor(t, "the pool to join again", func() bool {
-		return h.client.Uplinks()[0].Status().Pool == uplink.DefaultPoolSize
+	waitFor(t, "the pools to register again, in the places freed", func() bool {
+		pv, _ := peerView(h.server, proto.TypePod, "lab")
+		cv, _ := peerView(h.server, proto.TypeClient, "me")
+		return h.client.Uplinks()[0].Status().Pool == size && places(pv.Places, size) && places(cv.Places, size)
 	})
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -827,5 +845,43 @@ func TestPool(t *testing.T) {
 	defer c.Close()
 	if err := echo(c, "after"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSameName checks that clients of the same name are one peer to the
+// server, whose connections are numbered together, and that the tunnels of
+// each work.
+func TestSameName(t *testing.T) {
+	const size = uplink.DefaultPoolSize
+	h := startHub(t, []proto.Node{{Name: "echo", Addr: echoNode(t, "")}}, []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}, hubOpts{})
+	other := start(t, func(ctx context.Context, ready func(*client.Client)) error {
+		cfg := client.Config{Name: "me", Servers: []uplink.Config{{Name: "hub", Addr: h.server.Addr(), Password: password}}, Forwards: []client.Forward{{Listen: "127.0.0.1:0", Pod: "lab", Node: "echo"}}}
+		return client.Run(ctx, cfg, "", io.Discard, ready)
+	})
+	waitFor(t, "both clients to register as one", func() bool {
+		cv, _ := peerView(h.server, proto.TypeClient, "me")
+		clients := 0
+		for _, p := range h.server.Status().Peers {
+			if p.Info.Type == proto.TypeClient {
+				clients++
+			}
+		}
+		return clients == 1 && places(cv.Places, 2*size) && other.Uplinks()[0].Status().Pool == size && h.client.Uplinks()[0].Status().Pool == size
+	})
+	for _, cl := range []*client.Client{h.client, other} {
+		addr := cl.Forwards()[0].Addr
+		for i := range size {
+			c, err := net.Dial("tcp", addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			if err := echo(c, fmt.Sprint("ping ", i)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := len(h.server.Routes()); got != 2*size {
+		t.Fatalf("%d tunnels", got)
 	}
 }

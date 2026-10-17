@@ -41,11 +41,10 @@ const (
 	// MethodRegister authenticates a pod or client and registers it:
 	// RegisterReq answered with RegisterRsp. It must be the first call on a
 	// connection; the server refuses every other one until it succeeds.
+	// Every connection of a peer's pool registers, and the server takes the
+	// connections of one type and name, from however many processes, for
+	// one peer.
 	MethodRegister = "/fibhub/register"
-	// MethodJoin adds another connection to a registered peer, to carry
-	// some of its tunnels: JoinReq answered with "ok". It is the first call
-	// on such a connection, in place of MethodRegister.
-	MethodJoin = "/fibhub/join"
 	// MethodUpdate replaces what a registered peer told about itself: Info
 	// answered with "ok".
 	MethodUpdate = "/fibhub/update"
@@ -139,9 +138,9 @@ func (info *Info) FindNode(name string) (Node, bool) {
 	return Node{}, false
 }
 
-// RegisterReq authenticates and registers a peer. MAC is the HMAC-SHA256,
-// keyed with the server's password, of the peer's type and name, Time and
-// Nonce; see Sign.
+// RegisterReq authenticates and registers a connection of a peer's pool.
+// MAC is the HMAC-SHA256, keyed with the server's password, of the peer's
+// type and name, Time and Nonce; see Sign.
 type RegisterReq struct {
 	Info  Info   `json:"info"`
 	Time  int64  `json:"time"`
@@ -151,22 +150,18 @@ type RegisterReq struct {
 
 // RegisterRsp answers a registration.
 type RegisterRsp struct {
-	// ID is the peer's number on the server for as long as its connection
-	// lasts. The tunnels a client opens have it in their IDs' high 32 bits.
-	ID uint32 `json:"id"`
+	// Peer is the peer's number on the server, for as long as any of its
+	// connections lasts.
+	Peer uint32 `json:"peer"`
+	// Conn is the connection's number on the server, which no other
+	// connection has while it lasts. The tunnels a client opens over it
+	// have it in their IDs' high 32 bits.
+	Conn uint32 `json:"conn"`
+	// Index is the connection's place among the peer's connections: the
+	// lowest that none of them holds, as a Unix file descriptor is.
+	Index int `json:"index"`
 	// Server is the server's name.
 	Server string `json:"server"`
-	// Session is the secret the peer's other connections join it with.
-	Session string `json:"session"`
-}
-
-// JoinReq adds a connection to the registered peer ID. It is signed as a
-// registration is, and carries the Session the peer's registration was
-// answered with.
-type JoinReq struct {
-	RegisterReq
-	ID      uint32 `json:"id"`
-	Session string `json:"session"`
 }
 
 // PodView is a pod as the server lists it to clients.
@@ -231,12 +226,12 @@ type TunnelOpenRsp struct {
 	Addr string `json:"addr"`
 }
 
-// TunnelID is the ID of the seq-th tunnel of the peer the server numbered
-// peer.
-func TunnelID(peer uint32, seq uint32) uint64 { return uint64(peer)<<32 | uint64(seq) }
+// TunnelID is the ID of the seq-th tunnel opened over the connection the
+// server numbered conn.
+func TunnelID(conn uint32, seq uint32) uint64 { return uint64(conn)<<32 | uint64(seq) }
 
-// TunnelPeer is the peer number in a tunnel's ID.
-func TunnelPeer(id uint64) uint32 { return uint32(id >> 32) }
+// TunnelConn is the connection number in a tunnel's ID.
+func TunnelConn(id uint64) uint32 { return uint32(id >> 32) }
 
 // Frame is a tunnel frame: id and then payload.
 func Frame(id uint64, payload []byte) []byte {
@@ -284,13 +279,6 @@ func Sign(req *RegisterReq, password string) {
 	req.Time = time.Now().Unix()
 	req.Nonce = hex.EncodeToString(nonce[:])
 	req.MAC = mac(req, password)
-}
-
-// NewSession is a fresh RegisterRsp.Session.
-func NewSession() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }
 
 func mac(req *RegisterReq, password string) string {

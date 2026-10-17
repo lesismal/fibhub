@@ -1,8 +1,10 @@
 //go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd || windows
 
 // Package server is fibhub's server mode. Pods and clients connect to its
-// arpc address and register with the shared password, each with a pool of
-// connections that join the one that registered; the server keeps track of
+// arpc address and register with the shared password, every connection of
+// each one's pool; the connections of one type and name, from however many
+// processes, are one peer, numbered as Unix file descriptors are. The
+// server keeps track of
 // them, routes each tunnel a client opens to the pod it names, and passes
 // the tunnel's frames between the two, over one connection of each
 // throughout, so they keep their order. A web page shows what is
@@ -13,13 +15,11 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
-	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -93,23 +93,29 @@ func (cfg *Config) setDefaults() {
 	}
 }
 
-// peerKey is where a connection's Peer is kept on its arpc client.
-type peerKey struct{}
+// connKey is where a connection's Conn is kept on its arpc client.
+type connKey struct{}
+
+// Conn is a registered connection of a peer.
+type Conn struct {
+	// ID is the connection's number on the server, which no other
+	// connection has while it lasts; the tunnels opened over it carry it.
+	ID uint32
+	// Index is the connection's place among its peer's.
+	Index int
+	Peer  *Peer
+}
 
 // Peer is a registered pod or client.
 type Peer struct {
 	ID uint32
-	// Client is the connection the peer registered on, which the server
-	// calls the peer on.
-	Client *arpc.Client
-	Addr   string
-	Since  time.Time
+	// Addr is where the connection the peer first registered came from.
+	Addr  string
+	Since time.Time
 
-	// session is what the peer's other connections join it with, and links
-	// the connections that carry its tunnels, Client first; links change
-	// under the server's lock.
-	session string
-	links   []*arpc.Client
+	// links is the peer's connections, by their places among its
+	// connections; it changes under the server's lock.
+	links map[int]*arpc.Client
 
 	mu   sync.Mutex
 	info proto.Info
@@ -180,13 +186,14 @@ type Server struct {
 	// wsIndex and arpcWSIndex are the bindings of the WebSockets, or -1.
 	wsIndex, arpcWSIndex int
 
-	mu      sync.Mutex
-	nextID  uint32
-	peers   map[*arpc.Client]*Peer
-	byName  map[string]*Peer
-	byID    map[uint32]*Peer
-	routes  map[uint64]*Route
-	started time.Time
+	mu       sync.Mutex
+	nextID   uint32
+	nextConn uint32
+	peers    map[*arpc.Client]*Peer
+	byName   map[string]*Peer
+	byID     map[uint32]*Peer
+	routes   map[uint64]*Route
+	started  time.Time
 }
 
 // Run serves cfg until ctx ends. ready, if not nil, is told the server once
@@ -313,9 +320,16 @@ func (s *Server) ArpcWSURL() string {
 	return "ws://" + dialable(s.engine, s.arpcWSIndex) + s.cfg.ArpcWSPath
 }
 
+func connOf(c *arpc.Client) *Conn {
+	if v, ok := c.Get(connKey{}); ok {
+		return v.(*Conn)
+	}
+	return nil
+}
+
 func peerOf(c *arpc.Client) *Peer {
-	if v, ok := c.Get(peerKey{}); ok {
-		return v.(*Peer)
+	if conn := connOf(c); conn != nil {
+		return conn.Peer
 	}
 	return nil
 }
@@ -326,7 +340,7 @@ var errNotRegistered = errors.New("fibhub: register first")
 func (s *Server) setupArpc(h *arpc.Handler) {
 	// Only registration is served before a connection has registered.
 	h.Use(func(ctx *arpc.Context) {
-		if m := ctx.Message.Method(); m != proto.MethodRegister && m != proto.MethodJoin && peerOf(ctx.Client) == nil {
+		if m := ctx.Message.Method(); m != proto.MethodRegister && peerOf(ctx.Client) == nil {
 			_ = ctx.Error(errNotRegistered)
 			ctx.Abort()
 		}
@@ -349,7 +363,6 @@ func (s *Server) setupArpc(h *arpc.Handler) {
 	h.HandleDisconnected(s.disconnected)
 
 	h.Handle(proto.MethodRegister, s.register)
-	h.Handle(proto.MethodJoin, s.join)
 	h.Handle(proto.MethodUpdate, s.update)
 	h.Handle(proto.MethodPing, s.ping, false)
 	h.Handle(proto.MethodPods, func(ctx *arpc.Context) { _ = ctx.Write(s.podList()) })
@@ -377,77 +390,57 @@ func (s *Server) setupArpc(h *arpc.Handler) {
 	h.Handle(proto.MethodTunnelClose, func(ctx *arpc.Context) { s.forward(ctx, proto.MethodTunnelClose) }, false)
 }
 
+// register registers a connection of a peer's pool: with the peer of the
+// same type and name, or as a new peer, in the lowest place none of the
+// peer's connections holds.
 func (s *Server) register(ctx *arpc.Context) {
 	var req proto.RegisterReq
 	if err := ctx.Bind(&req); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
-	if peerOf(ctx.Client) != nil {
+	c := ctx.Client
+	if peerOf(c) != nil {
 		_ = ctx.Error(errors.New("fibhub: already registered"))
 		return
 	}
 	if err := s.verifier.Verify(&req); err != nil {
-		slog.Warn("fibhub: registration refused", "remote", remote(ctx.Client), "name", req.Info.Name, "err", err)
+		slog.Warn("fibhub: registration refused", "remote", remote(c), "name", req.Info.Name, "err", err)
 		_ = ctx.Error(err)
 		return
 	}
-	peer := &Peer{Client: ctx.Client, Addr: remote(ctx.Client), Since: time.Now(), session: proto.NewSession(), links: []*arpc.Client{ctx.Client}, info: req.Info}
+	key := req.Info.Type + "/" + req.Info.Name
 	s.mu.Lock()
-	s.nextID++
-	if s.nextID == 0 {
+	peer := s.byName[key]
+	created := peer == nil
+	if created {
+		peer = &Peer{Addr: remote(c), Since: time.Now(), links: map[int]*arpc.Client{}, info: req.Info}
 		s.nextID++
+		if s.nextID == 0 {
+			s.nextID++
+		}
+		peer.ID = s.nextID
+		s.byName[key] = peer
+		s.byID[peer.ID] = peer
 	}
-	peer.ID = s.nextID
-	old := s.byName[peer.key()]
-	s.byName[peer.key()] = peer
-	s.byID[peer.ID] = peer
-	s.peers[ctx.Client] = peer
+	conn := &Conn{Peer: peer}
+	for peer.links[conn.Index] != nil {
+		conn.Index++
+	}
+	s.nextConn++
+	if s.nextConn == 0 {
+		s.nextConn++
+	}
+	conn.ID = s.nextConn
+	peer.links[conn.Index] = c
+	s.peers[c] = peer
 	s.mu.Unlock()
-	ctx.Client.Set(peerKey{}, peer)
-	if old != nil {
-		// The newer connection wins: the old one is likely a connection the
-		// peer lost without the server hearing of it yet.
-		s.kick(old, "replaced by a new connection from "+peer.Addr)
-	}
-	slog.Info("fibhub: registered", "type", req.Info.Type, "name", req.Info.Name, "id", peer.ID, "remote", peer.Addr)
-	_ = ctx.Write(&proto.RegisterRsp{ID: peer.ID, Server: s.cfg.Name, Session: peer.session})
-	if req.Info.Type == proto.TypePod {
+	c.Set(connKey{}, conn)
+	slog.Info("fibhub: registered", "type", req.Info.Type, "name", req.Info.Name, "id", peer.ID, "index", conn.Index, "conn", conn.ID, "remote", remote(c))
+	_ = ctx.Write(&proto.RegisterRsp{Peer: peer.ID, Conn: conn.ID, Index: conn.Index, Server: s.cfg.Name})
+	if created && req.Info.Type == proto.TypePod {
 		s.broadcastPods()
 	}
-}
-
-var errNoJoin = errors.New("fibhub: no such registration to join")
-
-// join adds the connection to the registered peer it names, to carry some
-// of its tunnels.
-func (s *Server) join(ctx *arpc.Context) {
-	var req proto.JoinReq
-	if err := ctx.Bind(&req); err != nil {
-		_ = ctx.Error(err)
-		return
-	}
-	if peerOf(ctx.Client) != nil {
-		_ = ctx.Error(errors.New("fibhub: already registered"))
-		return
-	}
-	if err := s.verifier.Verify(&req.RegisterReq); err != nil {
-		slog.Warn("fibhub: join refused", "remote", remote(ctx.Client), "name", req.Info.Name, "err", err)
-		_ = ctx.Error(err)
-		return
-	}
-	s.mu.Lock()
-	peer := s.byID[req.ID]
-	if peer == nil || peer.key() != req.Info.Type+"/"+req.Info.Name || subtle.ConstantTimeCompare([]byte(peer.session), []byte(req.Session)) != 1 {
-		s.mu.Unlock()
-		_ = ctx.Error(errNoJoin)
-		return
-	}
-	peer.links = append(peer.links, ctx.Client)
-	s.peers[ctx.Client] = peer
-	s.mu.Unlock()
-	ctx.Client.Set(peerKey{}, peer)
-	_ = ctx.Write("ok")
 }
 
 func (s *Server) update(ctx *arpc.Context) {
@@ -492,9 +485,8 @@ func (s *Server) ping(ctx *arpc.Context) {
 	_ = ctx.Write(&rsp)
 }
 
-// disconnected closes the tunnels a connection that closed carried. A
-// peer whose registering connection closed is forgotten, and its other
-// connections closed.
+// disconnected closes the tunnels a connection that closed carried, and
+// forgets its peer once that has no connection left.
 func (s *Server) disconnected(c *arpc.Client) {
 	s.mu.Lock()
 	peer := s.peers[c]
@@ -503,31 +495,25 @@ func (s *Server) disconnected(c *arpc.Client) {
 		return
 	}
 	delete(s.peers, c)
-	if c != peer.Client {
-		peer.links = slices.DeleteFunc(peer.links, func(l *arpc.Client) bool { return l == c })
-		routes := s.takeRoutesLocked(func(r *Route) bool { return r.ClientLink == c || r.PodLink == c })
-		s.mu.Unlock()
-		info := peer.Info()
+	for i, l := range peer.links {
+		if l == c {
+			delete(peer.links, i)
+		}
+	}
+	routes := s.takeRoutesLocked(func(r *Route) bool { return r.ClientLink == c || r.PodLink == c })
+	gone := len(peer.links) == 0
+	if gone {
+		delete(s.byID, peer.ID)
+		if s.byName[peer.key()] == peer {
+			delete(s.byName, peer.key())
+		}
+	}
+	s.mu.Unlock()
+	info := peer.Info()
+	if !gone {
 		closeRoutes(routes, peer, "a connection of "+info.Type+" "+info.Name+" closed")
 		return
 	}
-	others := slices.DeleteFunc(peer.links, func(l *arpc.Client) bool { return l == c })
-	peer.links = nil
-	for _, l := range others {
-		delete(s.peers, l)
-	}
-	delete(s.byID, peer.ID)
-	if s.byName[peer.key()] == peer {
-		delete(s.byName, peer.key())
-	}
-	routes := s.takeRoutesLocked(func(r *Route) bool { return r.Client == peer || r.Pod == peer })
-	s.mu.Unlock()
-	for _, l := range others {
-		if conn := l.Conn(); conn != nil {
-			_ = conn.Close()
-		}
-	}
-	info := peer.Info()
 	slog.Info("fibhub: disconnected", "type", info.Type, "name", info.Name, "id", peer.ID, "tunnels", len(routes))
 	closeRoutes(routes, peer, info.Type+" "+info.Name+" disconnected")
 	if info.Type == proto.TypePod {
@@ -561,12 +547,54 @@ func closeRoutes(routes []*Route, peer *Peer, reason string) {
 	}
 }
 
-// kick tells peer why and closes its connection.
+// kick tells peer why and closes its connections.
 func (s *Server) kick(peer *Peer, reason string) {
-	_ = peer.Client.Notify(proto.MethodKick, reason, time.Second)
-	if conn := peer.Client.Conn(); conn != nil {
-		conn.CloseAfterSend()
+	for _, l := range s.links(peer) {
+		_ = l.Notify(proto.MethodKick, reason, time.Second)
+		if conn := l.Conn(); conn != nil {
+			conn.CloseAfterSend()
+		}
 	}
+}
+
+// links is peer's connections, by their places.
+func (s *Server) links(peer *Peer) []*arpc.Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return peer.linksLocked()
+}
+
+// placesLocked is the places the peer's connections hold, lowest first.
+// Callers hold the server's lock.
+func (p *Peer) placesLocked() []int {
+	places := make([]int, 0, len(p.links))
+	for i := range p.links {
+		places = append(places, i)
+	}
+	sort.Ints(places)
+	return places
+}
+
+// linksLocked is the peer's connections, by their places. Callers hold the
+// server's lock.
+func (p *Peer) linksLocked() []*arpc.Client {
+	places := p.placesLocked()
+	out := make([]*arpc.Client, len(places))
+	for k, i := range places {
+		out[k] = p.links[i]
+	}
+	return out
+}
+
+var errGone = errors.New("fibhub: the peer has no connection")
+
+// call calls method on peer, over its connection in the lowest place.
+func (s *Server) call(peer *Peer, method string, req, rsp any) error {
+	links := s.links(peer)
+	if len(links) == 0 {
+		return errGone
+	}
+	return links[0].Call(method, req, rsp, s.cfg.CallTimeout)
 }
 
 // notifyClose closes tunnel id at the end link carries.
@@ -635,7 +663,9 @@ func (s *Server) broadcastPods() {
 	list := s.podList()
 	for _, p := range s.Peers() {
 		if p.Info().Type == proto.TypeClient {
-			_ = p.Client.Notify(proto.MethodPods, list, time.Second)
+			if links := s.links(p); len(links) > 0 {
+				_ = links[0].Notify(proto.MethodPods, list, time.Second)
+			}
 		}
 	}
 }
@@ -643,7 +673,7 @@ func (s *Server) broadcastPods() {
 // refreshPod asks pod for its info.
 func (s *Server) refreshPod(pod *Peer) (proto.Info, error) {
 	var info proto.Info
-	if err := pod.Client.Call(proto.MethodPodInfo, nil, &info, s.cfg.CallTimeout); err != nil {
+	if err := s.call(pod, proto.MethodPodInfo, nil, &info); err != nil {
 		return info, err
 	}
 	if err := s.acceptPodInfo(pod, info); err != nil {
@@ -658,7 +688,7 @@ func (s *Server) setPodNodes(pod *Peer, nodes []proto.Node) (proto.Info, error) 
 		nodes = []proto.Node{}
 	}
 	var info proto.Info
-	if err := pod.Client.Call(proto.MethodPodSetNodes, nodes, &info, s.cfg.CallTimeout); err != nil {
+	if err := s.call(pod, proto.MethodPodSetNodes, nodes, &info); err != nil {
 		return info, err
 	}
 	if err := s.acceptPodInfo(pod, info); err != nil {
@@ -689,8 +719,8 @@ func (s *Server) openTunnel(ctx *arpc.Context) {
 		_ = ctx.Error(errors.New("fibhub: only a client opens tunnels"))
 		return
 	}
-	if proto.TunnelPeer(req.ID) != client.ID {
-		_ = ctx.Error(errors.New("fibhub: a tunnel ID must carry the client's ID"))
+	if proto.TunnelConn(req.ID) != connOf(ctx.Client).ID {
+		_ = ctx.Error(errors.New("fibhub: a tunnel ID must carry its connection's number"))
 		return
 	}
 	pod := s.peerByName(proto.TypePod, req.Pod)
@@ -749,7 +779,8 @@ func (s *Server) openTunnel(ctx *arpc.Context) {
 // that carries the fewest tunnels, the first of those that carry as few.
 // Callers hold mu.
 func (s *Server) pickLinkLocked(peer *Peer) *arpc.Client {
-	if len(peer.links) == 0 {
+	links := peer.linksLocked()
+	if len(links) == 0 {
 		return nil
 	}
 	load := map[*arpc.Client]int{}
@@ -758,8 +789,8 @@ func (s *Server) pickLinkLocked(peer *Peer) *arpc.Client {
 			load[r.PodLink]++
 		}
 	}
-	link := peer.links[0]
-	for _, l := range peer.links[1:] {
+	link := links[0]
+	for _, l := range links[1:] {
 		if load[l] < load[link] {
 			link = l
 		}
